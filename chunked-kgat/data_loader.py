@@ -345,14 +345,6 @@ class DataLoaderTest(object):
         examples = list()
         with open(data_path) as fin:
             for step, line in enumerate(fin):
-                for evidence in instance['evidence']:
-                    evi_list.append([self.process_sent(claim), self.process_wiki_title(evidence[0]),
-                                     self.process_sent(evidence[2])])
-                id = instance['id']
-                evi_list = evi_list[:self.evi_num]
-                examples.append([evi_list, id])
-                
-                
                 instance = json.loads(line.strip())
                 evi_list = []
                 claim = instance['claim']
@@ -424,8 +416,6 @@ class DataLoaderTest(object):
             sc_seg_tensor_input = Variable(
                 torch.LongTensor(sc_seg_padding_inputs)).view(-1, max_subclaims_cnt, self.max_len)
             
-            lab_tensor = Variable(
-                torch.LongTensor(labels))
             if self.cuda:
                 inp_tensor_input = inp_tensor_input.cuda()
                 msk_tensor_input = msk_tensor_input.cuda()
@@ -434,8 +424,6 @@ class DataLoaderTest(object):
                 sc_inp_tensor_input = sc_inp_tensor_input.cuda()
                 sc_msk_tensor_input = sc_msk_tensor_input.cuda()
                 sc_seg_tensor_input = sc_seg_tensor_input.cuda()
-                
-                lab_tensor = lab_tensor.cuda()
             self.step += 1
             return (inp_tensor_input, msk_tensor_input, seg_tensor_input), (sc_inp_tensor_input, sc_msk_tensor_input, sc_seg_tensor_input), ids
         else:

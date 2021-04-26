@@ -16,7 +16,7 @@ import json
 import random, os
 import argparse
 import numpy as np
-from models import inference_model
+from models import inference_model, chunked_inference_model
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,8 @@ def eval_model(model, label_list, validset_reader, outdir, name):
 
     with open(outpath, "w") as f:
         for index, data in enumerate(validset_reader):
-            inputs, ids = data
-            logits = model(inputs)
+            inputs, sc_inputs, ids = data
+            logits = model(inputs, sc_inputs)
             preds = logits.max(1)[1].tolist()
             assert len(preds) == len(ids)
             for step in range(len(preds)):
@@ -81,7 +81,8 @@ if __name__ == "__main__":
     bert_model = BertForSequenceEncoder.from_pretrained(args.bert_pretrain)
     bert_model = bert_model.cuda()
     bert_model.eval()
-    model = inference_model(bert_model, args)
+    infr_model = inference_model(bert_model, args)
+    model = chunked_inference_model(infr_model, args)
     model.load_state_dict(torch.load(args.checkpoint)['model'])
     model = model.cuda()
     model.eval()
