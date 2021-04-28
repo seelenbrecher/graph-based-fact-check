@@ -214,13 +214,47 @@ class chunked_inference_model(nn.Module):
         prob_logs = self.attention(sc_inputs, prob_logs)
         return prob_logs
 
+class naive_chunked_model(nn.Module):
+    # no training needed, only use to infer with kgat as the backbone
+    def __init__(self, inference_model, args):
+        super(naive_chunked_model, self).__init__()
+        self.inference_model = inference_model
+    
+    def naive_rules(self, sc_inputs, prob_logs):
+        sc_inp_tensor, sc_msk_tensor, sc_seg_tensor = sc_inputs
+        batch_size, subclaim_cnt, max_len = sc_inp_tensor.shape
+        
+        sc_inp_tensor = sc_inp_tensor.view(-1, max_len)
+        sc_msk_tensor = sc_msk_tensor.view(-1, max_len)
+        sc_seg_tensor = sc_seg_tensor.view(-1, max_len)
+        
+        prob_logs = prob_logs.view(batch_size, subclaim_cnt, -1)
+        _, indices = prob_logs.max(2)
+        probs = torch.zeros((batch_size, 3)).cuda()
+        
+        for idx, indice in enumerate(indices):
+            freqs = torch.bincount(indice, minlength=3)
+            if freqs[1] > 0:
+                probs[idx][1] = 1.0
+            elif freqs[2] > 0:
+                probs[idx][2] = 1.0
+            else:
+                probs[idx][0] = 1.0
+        
+        return probs
 
+    def forward(self, inputs, sc_inputs):
+        inp_tensor, msk_tensor, seg_tensor = inputs
 
-
-
-
-
-
+        batch_size, subclaim_cnt, evi_cnt, max_len = inp_tensor.shape
+        
+        inp_tensor = inp_tensor.view(-1, evi_cnt, max_len)
+        msk_tensor = msk_tensor.view(-1, evi_cnt, max_len)
+        seg_tensor = seg_tensor.view(-1, evi_cnt, max_len)
+        
+        prob_logs = self.inference_model([inp_tensor, msk_tensor, seg_tensor])
+        prob_logs = self.naive_rules(sc_inputs, prob_logs)
+        return prob_logs
 
 
 

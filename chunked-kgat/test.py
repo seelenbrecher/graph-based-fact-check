@@ -16,7 +16,7 @@ import json
 import random, os
 import argparse
 import numpy as np
-from models import inference_model, chunked_inference_model
+from models import inference_model, chunked_inference_model, naive_chunked_model
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_len", default=130, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
+    parser.add_argument("--chunked_model", default="vanilla")
 
 
 
@@ -81,9 +82,14 @@ if __name__ == "__main__":
     bert_model = BertForSequenceEncoder.from_pretrained(args.bert_pretrain)
     bert_model = bert_model.cuda()
     bert_model.eval()
-    infr_model = inference_model(bert_model, args)
-    model = chunked_inference_model(infr_model, args)
-    model.load_state_dict(torch.load(args.checkpoint)['model'])
+    if args.chunked_model == 'vanilla':
+        infr_model = inference_model(bert_model, args)
+        model = chunked_inference_model(infr_model, args)
+        model.load_state_dict(torch.load(args.checkpoint)['model'])
+    elif args.chunked_model == 'naive':
+        infr_model = inference_model(bert_model, args)
+        infr_model.load_state_dict(torch.load(args.checkpoint)['model'])
+        model = naive_chunked_model(infr_model, args)
     model = model.cuda()
     model.eval()
     eval_model(model, label_list, validset_reader, args.outdir, args.name)
