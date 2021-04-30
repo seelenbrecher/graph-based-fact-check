@@ -10,7 +10,7 @@ from torch.autograd import Variable
 from pytorch_pretrained_bert.tokenization import whitespace_tokenize, BasicTokenizer, BertTokenizer
 from pytorch_pretrained_bert.optimization import BertAdam
 
-from models import inference_model, chunked_inference_model
+from models import inference_model, chunked_inference_model, naive_chunked_model
 from data_loader import DataLoader
 from bert_model import BertForSequenceEncoder
 from torch.nn import NLLLoss
@@ -35,11 +35,25 @@ def correct_prediction(output, labels):
 def eval_model(model, validset_reader):
     model.eval()
     correct_pred = 0.0
+#     total = 0
     for index, data in enumerate(validset_reader):
         inputs, sc_inputs, lab_tensor = data
+#         inp_tensor, msk_tensor, seg_tensor = inputs
+
+#         batch_size, subclaim_cnt, evi_cnt, max_len = inp_tensor.shape
+#         if index > 200:
+#             break
+#         if subclaim_cnt > 1:
+#             continue
+        
         prob = model(inputs, sc_inputs)
         correct_pred += correct_prediction(prob, lab_tensor)
+#         total += batch_size
+#         print(index, batch_size, correct_pred, total)
+#         import pdb
+#         pdb.set_trace()
     dev_accuracy = correct_pred / validset_reader.total_num
+#     dev_accuracy = correct_pred / total
     return dev_accuracy
 
 
@@ -63,6 +77,9 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
                          t_total=t_total)
     #optimizer = optim.Adam(model.parameters(),
     #                       lr=args.learning_rate)
+#     dev_accuracy = eval_model(model, validset_reader)
+#     logger.info('Dev total acc: {0}'.format(dev_accuracy))
+#     return
     global_step = 0
     for epoch in range(int(args.num_train_epochs)):
         model.train()
@@ -96,6 +113,7 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
 
 
 if __name__ == "__main__":
+    print(torch.cuda.current_device())
     parser = argparse.ArgumentParser()
     parser.add_argument('--patience', type=int, default=20, help='Patience')
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
@@ -133,6 +151,7 @@ if __name__ == "__main__":
                         default=8,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument('--freeze_inference_model', action='store_false', default=True, help='Freeze kgat model')
+    parser.add_argument("--chunked_model", default="vanilla")
     args = parser.parse_args()
 
     if not os.path.exists(args.outdir):
@@ -164,10 +183,11 @@ if __name__ == "__main__":
     if args.infermodel_pretrain:
         print('load infermodel')
         model_dict = infr_model.state_dict()
-        pretrained_dict = torch.load(args.infermodel_pretrain)['model']
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-        model_dict.update(pretrained_dict)
-    ori_model = chunked_inference_model(infr_model, args)
+        infr_model.load_state_dict(torch.load(args.infermodel_pretrain)['model'])
+    if args.chunked_model == 'vanilla':
+        ori_model = chunked_inference_model(infr_model, args)
+    elif args.chunked_model == 'naive':
+        ori_model = naive_chunked_model(infr_model, args)
     model = nn.DataParallel(ori_model)
     model = model.cuda()
     train_model(model, ori_model, args, trainset_reader, validset_reader)

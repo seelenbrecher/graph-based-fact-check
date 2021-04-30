@@ -167,9 +167,9 @@ class chunked_inference_model(nn.Module):
         self.attn_linear = nn.Linear(self.bert_hidden_dim, self.bert_hidden_dim)
         self.attn_vector = nn.Parameter(norm_weight(self.bert_hidden_dim, None))
         
-#         if args.freeze_inference_model:
-#             for param in self.inference_model.parameters():
-#                 param.requires_grad = False
+        if args.freeze_inference_model:
+            for param in self.inference_model.parameters():
+                param.requires_grad = False
                 
     def attention(self, sc_inputs, prob_logs):
         sc_inp_tensor, sc_msk_tensor, sc_seg_tensor = sc_inputs
@@ -186,10 +186,13 @@ class chunked_inference_model(nn.Module):
         # zero out invalid sub-claims
         zero_tensor = torch.zeros(sc_inp_tensor[0].shape).cuda()
         mask = torch.zeros(att_scores.shape).cuda()
+#         valid = torch.zeros(att_scores.shape).cuda() # valid subclaim or not
         for idx, inp in enumerate(sc_inp_tensor):
             if torch.all(torch.eq(zero_tensor, inp)):
                 mask[idx] = -1000000
-        
+#             else:
+#                 valid[idx] = 1
+                
         att_scores = att_scores + mask
         att_scores = att_scores.view(batch_size, subclaim_cnt, 1)
         att_weights = nn.Softmax(dim=1)(att_scores)
@@ -199,6 +202,17 @@ class chunked_inference_model(nn.Module):
         probs = probs.view(batch_size, subclaim_cnt, -1)
         probs = torch.sum(probs, 1)
         
+        # using prob_logs from KGAT for sample with 1 subclaim
+#         valid = valid.view(batch_size, subclaim_cnt)
+#         valid = torch.sum(valid, 1)
+#         voter = torch.zeros(batch_size).cuda()
+#         for idx, subclaim_count in enumerate(valid):
+#             if subclaim_count > 1:
+#                 voter[idx] = 1.0
+#         print('valid', valid)
+#         print('voter', voter)
+        
+#         probs = probs * voter + prob_logs * (1 - voter)
         return probs
 
     def forward(self, inputs, sc_inputs):
