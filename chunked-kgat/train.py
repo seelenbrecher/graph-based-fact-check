@@ -35,25 +35,13 @@ def correct_prediction(output, labels):
 def eval_model(model, validset_reader):
     model.eval()
     correct_pred = 0.0
-#     total = 0
+    total = 0
     for index, data in enumerate(validset_reader):
         inputs, sc_inputs, lab_tensor = data
-#         inp_tensor, msk_tensor, seg_tensor = inputs
-
-#         batch_size, subclaim_cnt, evi_cnt, max_len = inp_tensor.shape
-#         if index > 200:
-#             break
-#         if subclaim_cnt > 1:
-#             continue
-        
         prob = model(inputs, sc_inputs)
         correct_pred += correct_prediction(prob, lab_tensor)
-#         total += batch_size
-#         print(index, batch_size, correct_pred, total)
-#         import pdb
-#         pdb.set_trace()
+        total += batch_size
     dev_accuracy = correct_pred / validset_reader.total_num
-#     dev_accuracy = correct_pred / total
     return dev_accuracy
 
 
@@ -77,9 +65,6 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
                          t_total=t_total)
     #optimizer = optim.Adam(model.parameters(),
     #                       lr=args.learning_rate)
-#     dev_accuracy = eval_model(model, validset_reader)
-#     logger.info('Dev total acc: {0}'.format(dev_accuracy))
-#     return
     global_step = 0
     for epoch in range(int(args.num_train_epochs)):
         model.train()
@@ -123,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument('--valid_path', help='valid path')
     parser.add_argument("--train_batch_size", default=8, type=int, help="Total batch size for training.")
     parser.add_argument("--bert_hidden_dim", default=768, type=int, help="Total batch size for training.")
+    parser.add_argument('--attn_hidden_size', default=768, type=int)
     parser.add_argument("--valid_batch_size", default=8, type=int, help="Total batch size for predictions.")
     parser.add_argument('--outdir', required=True, help='path to output directory')
     parser.add_argument("--pool", type=str, default="att", help='Aggregating method: top, max, mean, concat, att, sum')
@@ -150,7 +136,7 @@ if __name__ == "__main__":
                         type=int,
                         default=8,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument('--freeze_inference_model', action='store_false', default=True, help='Freeze kgat model')
+    parser.add_argument('--freeze_inference_model', action='store_true', default=False, help='Freeze kgat model')
     parser.add_argument("--chunked_model", default="vanilla")
     args = parser.parse_args()
 
@@ -182,7 +168,6 @@ if __name__ == "__main__":
     infr_model = inference_model(bert_model, args)
     if args.infermodel_pretrain:
         print('load infermodel')
-        model_dict = infr_model.state_dict()
         infr_model.load_state_dict(torch.load(args.infermodel_pretrain)['model'])
     if args.chunked_model == 'vanilla':
         ori_model = chunked_inference_model(infr_model, args)

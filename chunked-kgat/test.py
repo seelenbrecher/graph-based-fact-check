@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
     parser.add_argument("--bert_hidden_dim", default=768, type=int, help="Total batch size for training.")
+    parser.add_argument('--attn_hidden_size', default=768, type=int)
     parser.add_argument("--layer", type=int, default=1, help='Graph Layer.')
     parser.add_argument("--num_labels", type=int, default=3)
     parser.add_argument("--kernel", type=int, default=21, help='Evidence num.')
@@ -58,6 +59,7 @@ if __name__ == "__main__":
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--chunked_model", default="vanilla")
+    parser.add_argument('--freeze_inference_model', action='store_true', default=False, help='Freeze kgat model')
 
 
 

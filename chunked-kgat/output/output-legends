@@ -1,0 +1,4 @@
+chunked-dev-1.json
+    naive-dev.json = using naive method aggregation (3 ways logical reasoning) = 75.03
+    chunked-dev.json = chunked-kgat-train-scratch-1 (train from scratch altogether) = 73.6
+    chunked-dev-train-att.json = chunked-kgat-train-att (train attn block only, with 768 attn_hidden_size) = 76.22

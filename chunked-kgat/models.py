@@ -162,10 +162,11 @@ class chunked_inference_model(nn.Module):
     def __init__(self, inference_model, args):
         super(chunked_inference_model, self).__init__()
         self.bert_hidden_dim = args.bert_hidden_dim
+        self.attn_hidden_size = args.attn_hidden_size
         
         self.inference_model = inference_model
-        self.attn_linear = nn.Linear(self.bert_hidden_dim, self.bert_hidden_dim)
-        self.attn_vector = nn.Parameter(norm_weight(self.bert_hidden_dim, None))
+        self.attn_linear = nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)
+        self.attn_vector = nn.Parameter(norm_weight(self.attn_hidden_size, None))
         
         if args.freeze_inference_model:
             for param in self.inference_model.parameters():
