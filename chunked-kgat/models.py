@@ -163,8 +163,15 @@ class chunked_inference_model(nn.Module):
         super(chunked_inference_model, self).__init__()
         self.bert_hidden_dim = args.bert_hidden_dim
         self.attn_hidden_size = args.attn_hidden_size
+        self.num_labels = args.num_labels
+        self.n_attn_layer = args.n_attn_layer
+        
+        # label smoothing
+        self.criterion = args.criterion
         
         self.inference_model = inference_model
+        self.attn_linear = nn.ModuleList([nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)])
+        self.attn_linear.extend([nn.Linear(self.attn_hidden_size, self.attn_hidden_size) for i in range(self.n_attn_layer - 1)])
         self.attn_linear = nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)
         self.attn_vector = nn.Parameter(norm_weight(self.attn_hidden_size, None))
         
@@ -201,7 +208,6 @@ class chunked_inference_model(nn.Module):
         
         probs = prob_logs * att_weights
         probs = probs.view(batch_size, subclaim_cnt, -1)
-        probs = torch.sum(probs, 1)
         
         # using prob_logs from KGAT for sample with 1 subclaim
 #         valid = valid.view(batch_size, subclaim_cnt)
@@ -214,7 +220,11 @@ class chunked_inference_model(nn.Module):
 #         print('voter', voter)
         
 #         probs = probs * voter + prob_logs * (1 - voter)
-        return probs
+        probs_aggregate = torch.sum(probs, 1)
+        all_probs = probs_aggregate.view(batch_size, 1, -1)
+        all_probs = torch.cat((probs, all_probs), 1)
+        all_probs = all_probs.view(-1, self.num_labels)
+        return probs_aggregate, all_probs
 
     def forward(self, inputs, sc_inputs):
         inp_tensor, msk_tensor, seg_tensor = inputs
@@ -226,8 +236,8 @@ class chunked_inference_model(nn.Module):
         seg_tensor = seg_tensor.view(-1, evi_cnt, max_len)
         
         prob_logs = self.inference_model([inp_tensor, msk_tensor, seg_tensor])
-        prob_logs = self.attention(sc_inputs, prob_logs)
-        return prob_logs
+        all_probs, probs_aggregate = self.attention(sc_inputs, prob_logs)
+        return all_probs, probs_aggregate
 
 class naive_chunked_model(nn.Module):
     # no training needed, only use to infer with kgat as the backbone

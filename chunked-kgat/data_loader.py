@@ -180,6 +180,9 @@ class DataLoader(object):
             self.total_step = self.total_num / batch_size
             self.shuffle()
         self.step = 0
+        
+        self.criterion = args.criterion
+        self.label_smoothing_ratio = args.label_smoothing_ratio
 
 
     def read_file(self, data_path):
@@ -275,8 +278,30 @@ class DataLoader(object):
             sc_seg_tensor_input = Variable(
                 torch.LongTensor(sc_seg_padding_inputs)).view(-1, max_subclaims_cnt, self.max_len)
             
-            lab_tensor = Variable(
-                torch.LongTensor(labels))
+            if 'train' in self.data_path and self.criterion == 'label_smoothing':
+                # targets are in the form of probs instead of classes
+                lab_tensor = []
+                for inp, label in zip(inputs, labels):
+                    # target for sub-claim
+                    for idx in range(len(inp)):
+                        if label == 0:
+                            lab_tensor.append([1.0, 0, 0])
+                        elif label == 1:
+                            lab_tensor.append([1.0 - self.label_smoothing_ratio, self.label_smoothing_ratio, 0])
+                        else:
+                            lab_tensor.append([1.0 - self.label_smoothing_ratio, 0, self.label_smoothing_ratio])
+                    
+                    # target for dummy sub-claim
+                    for idx in range(max_subclaims_cnt - len(inp)):
+                        lab_tensor.append([0,0,0])
+                    
+                    # target for the sentence
+                    lab_tensor.append([0,0,0])
+                    lab_tensor[-1][label] = 1.0
+                lab_tensor = Variable(torch.Tensor(lab_tensor))
+            else:
+                lab_tensor = Variable(
+                    torch.LongTensor(labels))
             if self.cuda:
                 inp_tensor_input = inp_tensor_input.cuda()
                 msk_tensor_input = msk_tensor_input.cuda()

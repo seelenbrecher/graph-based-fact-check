@@ -28,7 +28,7 @@ def eval_model(model, label_list, validset_reader, outdir, name):
     with open(outpath, "w") as f:
         for index, data in enumerate(validset_reader):
             inputs, sc_inputs, ids = data
-            logits = model(inputs, sc_inputs)
+            logits, _ = model(inputs, sc_inputs)
             preds = logits.max(1)[1].tolist()
             assert len(preds) == len(ids)
             for step in range(len(preds)):
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
     parser.add_argument("--bert_hidden_dim", default=768, type=int, help="Total batch size for training.")
+     parser.add_argument('--n_attn_layer', default=1, type=int)
     parser.add_argument('--attn_hidden_size', default=768, type=int)
     parser.add_argument("--layer", type=int, default=1, help='Graph Layer.')
     parser.add_argument("--num_labels", type=int, default=3)
@@ -60,6 +61,7 @@ if __name__ == "__main__":
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--chunked_model", default="vanilla")
     parser.add_argument('--freeze_inference_model', action='store_true', default=False, help='Freeze kgat model')
+    parser.add_argument('--criterion', default='standard', help='criterion for calculating loss')
 
 
 
