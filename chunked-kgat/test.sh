@@ -34,10 +34,21 @@
 # --batch_size 1
 
 # for chunked-kgat-train-att-bigger with 1536 att hidden size
-CUDA_VISIBLE_DEVICES=12 python test.py --outdir ./output/ \
---test_path ../data/standard_srl/srl_bert_eval.json \
---bert_pretrain ../bert_base \
---checkpoint ../checkpoint/chunked-kgat-train-att-bigger/model.best.pt \
---name chunked-dev-train-att-bigger.json \
---attn_hidden_size 1536 \
---batch_size 1
+# CUDA_VISIBLE_DEVICES=12 python test.py --outdir ./output/ \
+# --test_path ../data/standard_srl/srl_bert_eval.json \
+# --bert_pretrain ../bert_base \
+# --checkpoint ../checkpoint/chunked-kgat-train-att-bigger/model.best.pt \
+# --name chunked-dev-train-att-bigger.json \
+# --attn_hidden_size 1536 \
+# --batch_size 1
+
+
+# for chunked-kgat-big-4-layer with 1536 att hidden size
+# CUDA_VISIBLE_DEVICES=12 python test.py --outdir ./output/ \
+# --test_path ../data/standard_srl/srl_bert_eval.json \
+# --bert_pretrain ../bert_base \
+# --checkpoint ../checkpoint/chunked-kgat-big-4-layers/model.best.pt \
+# --name chunked-dev-train-att-big-4-layers.json \
+# --attn_hidden_size 1536 \
+# --batch_size 1 \
+# --n_attn_layer 4

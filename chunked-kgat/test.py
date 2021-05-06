@@ -49,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
     parser.add_argument("--bert_hidden_dim", default=768, type=int, help="Total batch size for training.")
-     parser.add_argument('--n_attn_layer', default=1, type=int)
+    parser.add_argument('--n_attn_layer', default=1, type=int)
     parser.add_argument('--attn_hidden_size', default=768, type=int)
     parser.add_argument("--layer", type=int, default=1, help='Graph Layer.')
     parser.add_argument("--num_labels", type=int, default=3)
