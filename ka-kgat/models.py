@@ -43,8 +43,45 @@ def kernel_sigmas(n_kernels):
     l_sigma += [0.1] * (n_kernels - 1)
     return l_sigma
 
+
+class ConceptEmbeddingModel(nn.Module):
+    def __init__(self, pretrained_concept, pretrained_relation, args):
+        super(ConceptEmbeddingModel, self).__init__()
+        self.concept_num = args.concept_num
+        self.relation_num = args.relation_num
+        self.concept_dim = args.concept_dim
+        self.relation_dim = args.relation_dim
+        
+        self.concept_emb = nn.Embedding(self.concept_num, self.concept_dim)
+        self.relation_emb = nn.Embedding(self.relation_num, self.relation_dim)
+        
+        if pretrained_concept is not None:
+            self.concept_emb.weight.data.copy_(pretrained_concept)
+        else:
+            bias = np.sqrt(6.0 / self.concept_dim)
+            nn.init.uniform_(self.concept_emb.weight, -bias, bias)
+
+        if pretrained_relation is not None:
+            self.relation_emb.weight.data.copy_(pretrained_relation)
+        else:
+            bias = np.sqrt(6.0 / self.relation_dim)
+            nn.init.uniform_(self.relation_emb.weight, -bias, bias)
+    
+    def forward(self, concept_inp, relation_inp):
+        concept_output = None
+        relation_output = None
+        
+        if concept_inp is not None:
+            concept_output = self.concept_emb(concept_inp)
+        
+        if relation_inp is not None:
+            relation_output = self.relation_emb(relation_inp)
+        
+        return concept_output, relation_output
+        
+
 class inference_model(nn.Module):
-    def __init__(self, bert_model, args):
+    def __init__(self, bert_model, concept_model, args):
         super(inference_model, self).__init__()
         self.bert_hidden_dim = args.bert_hidden_dim
         self.dropout = nn.Dropout(args.dropout)
@@ -54,9 +91,22 @@ class inference_model(nn.Module):
         self.evi_num = args.evi_num
         self.nlayer = args.layer
         self.kernel = args.kernel
-        self.proj_inference_de = nn.Linear(self.bert_hidden_dim * 2, self.num_labels)
+        
+        self.node_dim = self.bert_hidden_dim
+        
+        # concept embedding
+        self.use_concept = args.use_concept
+        self.concept_dim = args.concept_dim
+        if self.use_concept:
+            self.concept_model = concept_model
+            self.bert2concept_alignment = nn.Sequential(
+                Linear(self.bert_hidden_dim + self.concept_dim, self.node_dim),
+                ReLU(True)
+            )
+        
+        self.proj_inference_de = nn.Linear(self.node_dim * 2, self.num_labels)
         self.proj_att = nn.Linear(self.kernel, 1)
-        self.proj_input_de = nn.Linear(self.bert_hidden_dim, self.bert_hidden_dim)
+        self.proj_input_de = nn.Linear(self.node_dim, self.node_dim)
         self.proj_gat = nn.Sequential(
             Linear(self.bert_hidden_dim * 2, 128),
             ReLU(True),
@@ -81,7 +131,7 @@ class inference_model(nn.Module):
         hiddens_norm = F.normalize(inputs_hiddens, p=2, dim=-1)
         own_norm = F.normalize(own_hidden, p=2, dim=-1)
 
-        att_score = self.get_intersect_matrix_att(hiddens_norm.view(-1, self.max_len, self.bert_hidden_dim), own_norm.view(-1, self.max_len, self.bert_hidden_dim),
+        att_score = self.get_intersect_matrix_att(hiddens_norm.view(-1, self.max_len, self.node_dim), own_norm.view(-1, self.max_len, self.node_dim),
                                                   mask_evidence.view(-1, self.max_len), own_mask.view(-1, self.max_len))
         att_score = att_score.view(-1, self.evi_num, self.max_len, 1)
         #if index == 1:
@@ -125,10 +175,23 @@ class inference_model(nn.Module):
         return log_pooling_sum
     
     def initialize_node(self, token_level_bert, t2c_tensor, tpool_tensor):
+        """
+        initialize word-level node representation
+        Add concept embedding into word-level node representation
+        TODO: do self-attention by using GCN
+        """
+        # pool subword level to word level
         token_level_bert = token_level_bert.transpose(2, 1)
         token_level_bert = token_level_bert.bmm(tpool_tensor)
         token_level_bert = token_level_bert.transpose(2, 1)
         
+        if self.use_concept:
+            # get concept representation
+            token_level_concept, _ = self.concept_model(t2c_tensor, None)
+
+            # align bert and concept representation
+            token_level_bert = torch.cat((token_level_bert, token_level_concept), dim=2)
+            token_level_bert = self.bert2concept_alignment(token_level_bert)
         return token_level_bert
         
 
@@ -163,7 +226,7 @@ class inference_model(nn.Module):
         mask_evidence = comb_seg_tensor.float() * mask_text
         
         # calculate Node Kernel
-        inputs_hiddens = inputs_hiddens.view(-1, self.max_len, self.bert_hidden_dim)
+        inputs_hiddens = inputs_hiddens.view(-1, self.max_len, self.node_dim)
         inputs_hiddens_norm = F.normalize(inputs_hiddens, p=2, dim=2)
         log_pooling_sum = self.get_intersect_matrix(inputs_hiddens_norm, inputs_hiddens_norm, mask_claim, mask_evidence)
         log_pooling_sum = log_pooling_sum.view([-1, self.evi_num, 1])
@@ -171,16 +234,16 @@ class inference_model(nn.Module):
         
         # calculate Edge kernel
         inputs = inputs.view([-1, self.evi_num, self.bert_hidden_dim])
-        inputs_hiddens = inputs_hiddens.view([-1, self.evi_num, self.max_len, self.bert_hidden_dim])
+        inputs_hiddens = inputs_hiddens.view([-1, self.evi_num, self.max_len, self.node_dim])
         inputs_att_de = []
         for i in range(self.evi_num):
             outputs, outputs_de = self.self_attention(inputs, inputs_hiddens, mask_text, mask_text, i)
             inputs_att_de.append(outputs_de)
         
         # calculate prob
-        inputs_att = inputs.view([-1, self.evi_num, self.bert_hidden_dim])
+        inputs_att = inputs.view([-1, self.evi_num, self.node_dim])
         inputs_att_de = torch.cat(inputs_att_de, dim=1)
-        inputs_att_de = inputs_att_de.view([-1, self.evi_num, self.bert_hidden_dim])
+        inputs_att_de = inputs_att_de.view([-1, self.evi_num, self.node_dim])
         inputs_att = torch.cat([inputs_att, inputs_att_de], -1)
         inference_feature = self.proj_inference_de(inputs_att)
         class_prob = F.softmax(inference_feature, dim=2)

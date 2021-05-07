@@ -5,6 +5,7 @@ import json
 import re
 from torch.autograd import Variable
 
+CONCEPT_DUMMY_IDX = 799273
 
 def do_need_append_token(span, concept):
     span = span.lower()
@@ -377,6 +378,7 @@ class DataLoader(object):
             
             tok2concept_tensor_input = Variable(
                 torch.LongTensor(tok2concept_inputs)).view(-1, self.evi_num, self.max_len)
+            tok2concept_tensor_input[tok2concept_tensor_input==-1] = CONCEPT_DUMMY_IDX
             comb_msk_tensor_input = Variable(
                 torch.LongTensor(comb_msk_padding_inputs)).view(-1, self.evi_num, self.max_len)
             comb_seg_tensor_input = Variable(

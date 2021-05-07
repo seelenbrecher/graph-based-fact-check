@@ -10,10 +10,12 @@ from torch.autograd import Variable
 from pytorch_pretrained_bert.tokenization import whitespace_tokenize, BasicTokenizer, BertTokenizer
 from pytorch_pretrained_bert.optimization import BertAdam
 
-from models import inference_model
+from models import inference_model, ConceptEmbeddingModel
 from data_loader import DataLoader
 from bert_model import BertForSequenceEncoder
 from torch.nn import NLLLoss
+
+from prepare_concept import add_concept_args, load_transe_emb
 import logging
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,7 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
 if __name__ == "__main__":
     random.seed(13)
     parser = argparse.ArgumentParser()
+    parser = add_concept_args(parser)
     parser.add_argument('--patience', type=int, default=20, help='Patience')
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -159,7 +162,14 @@ if __name__ == "__main__":
         pretrained_dict = torch.load(args.postpretrain)['model']
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
         model_dict.update(pretrained_dict)
-    ori_model = inference_model(bert_model, args)
+        
+    logger.info('loading transe model')
+    concept_model = None
+    if args.use_concept:
+        cp_emb, rel_emb = load_transe_emb(args)
+        concept_model = ConceptEmbeddingModel(cp_emb, rel_emb, args)
+    
+    ori_model = inference_model(bert_model, concept_model, args)
     model = nn.DataParallel(ori_model)
     model = model.cuda()
     train_model(model, ori_model, args, trainset_reader, validset_reader)
