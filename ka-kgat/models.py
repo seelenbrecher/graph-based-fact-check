@@ -110,6 +110,9 @@ class inference_model(nn.Module):
         return log_pooling_sum
 
     def get_intersect_matrix_att(self, q_embed, d_embed, attn_q, attn_d):
+        """
+        Calculate Node Kernel
+        """
         attn_q = attn_q.view(attn_q.size()[0], attn_q.size()[1])
         attn_d = attn_d.view(attn_d.size()[0], 1, attn_d.size()[1], 1)
         sim = torch.bmm(q_embed, torch.transpose(d_embed, 1, 2)).view(q_embed.size()[0], q_embed.size()[1], d_embed.size()[1], 1)
@@ -120,28 +123,61 @@ class inference_model(nn.Module):
         log_pooling_sum = log_pooling_sum.masked_fill_((1 - attn_q).bool(), -1e4)
         log_pooling_sum = F.softmax(log_pooling_sum, dim=1)
         return log_pooling_sum
+    
+    def initialize_node(self, token_level_bert, t2c_tensor, tpool_tensor):
+        token_level_bert = token_level_bert.transpose(2, 1)
+        token_level_bert = token_level_bert.bmm(tpool_tensor)
+        token_level_bert = token_level_bert.transpose(2, 1)
+        
+        return token_level_bert
+        
 
     def forward(self, inputs):
-        inp_tensor, msk_tensor, seg_tensor = inputs
+        bert_tensor, comb_tensor, tpool_tensor = inputs
+        inp_tensor, msk_tensor, seg_tensor = bert_tensor
+        comb_inp_tensor, comb_msk_tensor, comb_seg_tensor = comb_tensor
+        
         msk_tensor = msk_tensor.view(-1, self.max_len)
         inp_tensor = inp_tensor.view(-1, self.max_len)
         seg_tensor = seg_tensor.view(-1, self.max_len)
+        
+        comb_inp_tensor = comb_inp_tensor.view(-1, self.max_len)
+        comb_msk_tensor = comb_msk_tensor.view(-1, self.max_len)
+        comb_seg_tensor = comb_seg_tensor.view(-1, self.max_len)
+        
+        tpool_tensor = tpool_tensor.view(-1, self.max_len, self.max_len)
+        
+        # initialize node's representations
         inputs_hiddens, inputs = self.pred_model(inp_tensor, msk_tensor, seg_tensor)
-        mask_text = msk_tensor.view(-1, self.max_len).float()
+        inputs_hiddens = self.initialize_node(inputs_hiddens, comb_inp_tensor, tpool_tensor)
+        
+        # now we are using comb_msk_tensor and comb_seg_tensor
+        # because we merge some sub-word levels from BERT tokenizer to span level
+#         mask_text = msk_tensor.view(-1, self.max_len).float()
+#         mask_text[:, 0] = 0.0
+#         mask_claim = (1 - seg_tensor.float()) * mask_text
+#         mask_evidence = seg_tensor.float() * mask_text
+        mask_text = comb_msk_tensor.view(-1, self.max_len).float()
         mask_text[:, 0] = 0.0
-        mask_claim = (1 - seg_tensor.float()) * mask_text
-        mask_evidence = seg_tensor.float() * mask_text
+        mask_claim = (1 - comb_seg_tensor.float()) * mask_text
+        mask_evidence = comb_seg_tensor.float() * mask_text
+        
+        # calculate Node Kernel
         inputs_hiddens = inputs_hiddens.view(-1, self.max_len, self.bert_hidden_dim)
         inputs_hiddens_norm = F.normalize(inputs_hiddens, p=2, dim=2)
         log_pooling_sum = self.get_intersect_matrix(inputs_hiddens_norm, inputs_hiddens_norm, mask_claim, mask_evidence)
         log_pooling_sum = log_pooling_sum.view([-1, self.evi_num, 1])
         select_prob = F.softmax(log_pooling_sum, dim=1)
+        
+        # calculate Edge kernel
         inputs = inputs.view([-1, self.evi_num, self.bert_hidden_dim])
         inputs_hiddens = inputs_hiddens.view([-1, self.evi_num, self.max_len, self.bert_hidden_dim])
         inputs_att_de = []
         for i in range(self.evi_num):
             outputs, outputs_de = self.self_attention(inputs, inputs_hiddens, mask_text, mask_text, i)
             inputs_att_de.append(outputs_de)
+        
+        # calculate prob
         inputs_att = inputs.view([-1, self.evi_num, self.bert_hidden_dim])
         inputs_att_de = torch.cat(inputs_att_de, dim=1)
         inputs_att_de = inputs_att_de.view([-1, self.evi_num, self.bert_hidden_dim])
