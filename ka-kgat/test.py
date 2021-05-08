@@ -16,7 +16,8 @@ import json
 import random, os
 import argparse
 import numpy as np
-from models import inference_model
+from models import inference_model, ConceptEmbeddingModel
+from prepare_concept import add_concept_args
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def eval_model(model, label_list, validset_reader, outdir, name):
 if __name__ == "__main__":
     random.seed(13)
     parser = argparse.ArgumentParser()
+    parser = add_concept_args(parser)
     parser.add_argument('--test_path', help='train path')
     parser.add_argument('--name', help='train path')
     parser.add_argument('--test_origin_path', help='train path')
@@ -82,7 +84,8 @@ if __name__ == "__main__":
     bert_model = BertForSequenceEncoder.from_pretrained(args.bert_pretrain)
     bert_model = bert_model.cuda()
     bert_model.eval()
-    model = inference_model(bert_model, args)
+    concept_model = ConceptEmbeddingModel(None, None, args)
+    model = inference_model(bert_model, concept_model, args)
     model.load_state_dict(torch.load(args.checkpoint)['model'])
     model = model.cuda()
     model.eval()
