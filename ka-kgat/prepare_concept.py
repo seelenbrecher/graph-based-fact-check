@@ -10,6 +10,8 @@ def add_concept_args(parser):
     parser.add_argument('--relation_num', default=17, type=int)
     parser.add_argument('--relation_dim', default=100, type=int)
     
+    parser.add_argument('--node_dim', default=768, type=int)
+    
     parser.add_argument('--use_concept', action='store_true', default=False)
     
     return parser

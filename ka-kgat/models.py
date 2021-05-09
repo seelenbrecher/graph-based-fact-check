@@ -92,7 +92,7 @@ class inference_model(nn.Module):
         self.nlayer = args.layer
         self.kernel = args.kernel
         
-        self.node_dim = self.bert_hidden_dim
+        self.node_dim = args.node_dim
         
         # concept embedding
         self.use_concept = args.use_concept
@@ -100,8 +100,9 @@ class inference_model(nn.Module):
         if self.use_concept:
             self.concept_model = concept_model
             self.bert2concept_alignment = nn.Sequential(
-                Linear(self.bert_hidden_dim + self.concept_dim, self.node_dim),
-                ReLU(True)
+                Linear(self.bert_hidden_dim + self.concept_dim, self.bert_hidden_dim * 2),
+                ReLU(True),
+                Linear(self.bert_hidden_dim * 2, self.node_dim)
             )
         
         self.proj_inference_de = nn.Linear(self.node_dim * 2, self.num_labels)
