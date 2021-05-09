@@ -5,6 +5,13 @@
 # --postpretrain ../pretrain/save_model/model.best.pt
 
 # no concept. but merge some sub-word to span level, based on mentioned concept
+# different with normal ka-kgat-concept-only : 
+#     Linear(self.bert_hidden_dim + self.concept_dim, self.bert_hidden_dim * 2),
+#     ReLU(True),
+#     Linear(self.bert_hidden_dim * 2, self.node_dim)
+# where normal ka-kgat concept:
+#     Linear(self.bert_hidden_dim + self.concept_dim, self.node_dim),
+#     ReLU(True)
 CUDA_VISIBLE_DEVICES=12 python train.py --outdir ../checkpoint/ka-kgat-concept-only-1 \
 --train_path ../data/fever_with_concepts/bert_train_concept.json \
 --valid_path ../data/fever_with_concepts/bert_dev_concept.json \
