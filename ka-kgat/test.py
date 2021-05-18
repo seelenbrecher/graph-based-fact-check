@@ -17,7 +17,7 @@ import random, os
 import argparse
 import numpy as np
 from models import inference_model, ConceptEmbeddingModel
-from prepare_concept import add_concept_args
+from prepare_concept import add_concept_args, add_span_gat_args
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ if __name__ == "__main__":
     random.seed(13)
     parser = argparse.ArgumentParser()
     parser = add_concept_args(parser)
+    parser = add_span_gat_args(parser)
     parser.add_argument('--test_path', help='train path')
     parser.add_argument('--name', help='train path')
     parser.add_argument('--test_origin_path', help='train path')

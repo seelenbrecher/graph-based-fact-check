@@ -12,7 +12,7 @@
 # where normal ka-kgat concept:
 #     Linear(self.bert_hidden_dim + self.concept_dim, self.node_dim),
 #     ReLU(True)
-CUDA_VISIBLE_DEVICES=12 python train.py --outdir ../checkpoint/ka-kgat-concept-only-1 \
+CUDA_VISIBLE_DEVICES=8 python train.py --outdir ../checkpoint/ka-kgat-concept-only-3 \
 --train_path ../data/fever_with_concepts/bert_train_concept.json \
 --valid_path ../data/fever_with_concepts/bert_dev_concept.json \
 --bert_pretrain ../bert_base \

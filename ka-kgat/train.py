@@ -15,7 +15,7 @@ from data_loader import DataLoader
 from bert_model import BertForSequenceEncoder
 from torch.nn import NLLLoss
 
-from prepare_concept import add_concept_args, load_transe_emb
+from prepare_concept import add_concept_args, load_transe_emb, add_span_gat_args
 import logging
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ if __name__ == "__main__":
     random.seed(13)
     parser = argparse.ArgumentParser()
     parser = add_concept_args(parser)
+    parser = add_span_gat_args(parser)
     parser.add_argument('--patience', type=int, default=20, help='Patience')
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
