@@ -170,9 +170,9 @@ class chunked_inference_model(nn.Module):
         self.criterion = args.criterion
         
         self.inference_model = inference_model
-        self.attn_linear = nn.ModuleList([nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)])
+        self.attn_linear.extend([nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)])
         self.attn_linear.extend([nn.Linear(self.attn_hidden_size, self.attn_hidden_size) for i in range(self.n_attn_layer - 1)])
-        self.attn_linear = nn.Linear(self.bert_hidden_dim, self.attn_hidden_size)
+        self.attn_linear = nn.Sequential(*self.attn_linear)
         self.attn_vector = nn.Parameter(norm_weight(self.attn_hidden_size, None))
         
         if args.freeze_inference_model:
