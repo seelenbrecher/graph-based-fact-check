@@ -9,15 +9,15 @@ NAME=ka-kgat-concept-gat\#5.0
 # rm ../checkpoint/$NAME/train_log.txt
 
 # # use concept + gat
-CUDA_VISIBLE_DEVICES=15 python train.py --outdir ../checkpoint/$NAME \
---train_path ../data/fever_concepts_with_sent_labels/train.json \
---valid_path ../data/fever_concepts_with_sent_labels/eval.json \
---bert_pretrain ../bert_base \
---postpretrain ../checkpoint/pretrain/model.best.pt \
---use_concept \
---span_use_gat \
---num_train_epochs 5 \
---span_gat_dropout 0.0
+# CUDA_VISIBLE_DEVICES=15 python train.py --outdir ../checkpoint/$NAME \
+# --train_path ../data/fever_concepts_with_sent_labels/train.json \
+# --valid_path ../data/fever_concepts_with_sent_labels/eval.json \
+# --bert_pretrain ../bert_base \
+# --postpretrain ../checkpoint/pretrain/model.best.pt \
+# --use_concept \
+# --span_use_gat \
+# --num_train_epochs 5 \
+# --span_gat_dropout 0.0
 
 CUDA_VISIBLE_DEVICES=15 python test.py --outdir ./output/ \
 --test_path ../data/fever_with_concepts/bert_eval_concept.json \
