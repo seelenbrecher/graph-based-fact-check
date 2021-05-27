@@ -527,10 +527,10 @@ class DataLoaderTest(object):
         self.step = 0
 
     def process_sent(self, sentence):
-        sentence = re.sub(" \-LSB\-.*?\-RSB\-", "", sentence)
-        sentence = re.sub("\-LRB\- \-RRB\- ", "", sentence)
-        sentence = re.sub(" -LRB-", " ( ", sentence)
-        sentence = re.sub("-RRB-", " )", sentence)
+        sentence = re.sub(" LSB.*?RSB", "", sentence)
+        sentence = re.sub("LRB RRB ", "", sentence)
+        sentence = re.sub("LRB", " ( ", sentence)
+        sentence = re.sub("RRB", " )", sentence)
         sentence = re.sub("--", "-", sentence)
         sentence = re.sub("``", '"', sentence)
         sentence = re.sub("''", '"', sentence)
@@ -539,9 +539,9 @@ class DataLoaderTest(object):
 
     def process_wiki_title(self, title):
         title = re.sub("_", " ", title)
-        title = re.sub(" -LRB-", " ( ", title)
-        title = re.sub("-RRB-", " )", title)
-        title = re.sub("-COLON-", ":", title)
+        title = re.sub("LRB", " ( ", title)
+        title = re.sub("RRB", " )", title)
+        title = re.sub("COLON", ":", title)
         return title
 
 

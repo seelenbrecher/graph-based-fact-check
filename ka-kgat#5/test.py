@@ -22,6 +22,15 @@ from prepare_concept import add_concept_args, add_span_gat_args
 logger = logging.getLogger(__name__)
 
 
+def reproducible():
+    SEED = 0
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    torch.backends.cudnn.deterministic = True
+
 
 def eval_model(model, label_list, validset_reader, outdir, name):
     outpath = outdir + name
@@ -39,7 +48,7 @@ def eval_model(model, label_list, validset_reader, outdir, name):
 
 
 if __name__ == "__main__":
-    random.seed(13)
+    reproducible()
     parser = argparse.ArgumentParser()
     parser = add_concept_args(parser)
     parser = add_span_gat_args(parser)

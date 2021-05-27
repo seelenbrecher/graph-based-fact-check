@@ -22,6 +22,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def reproducible():
+    SEED = 0
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    torch.backends.cudnn.deterministic = True
+
+
 def accuracy(output, labels):
     preds = output.max(1)[1].type_as(labels)
     correct = preds.eq(labels).double()
@@ -102,7 +112,7 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
 
 
 if __name__ == "__main__":
-    random.seed(13)
+    reproducible()
     parser = argparse.ArgumentParser()
     parser = add_concept_args(parser)
     parser = add_span_gat_args(parser)
