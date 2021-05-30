@@ -17,6 +17,7 @@ from bert_model import BertForSequenceEncoder
 from torch.nn import NLLLoss
 
 from prepare_concept import add_concept_args, load_transe_emb, add_span_gat_args
+from prepare_ner_and_srl import add_ner_srl_args
 import logging
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
                                     'model': ori_model.state_dict(),
                                     'best_accuracy': best_accuracy}, save_path + ".best.pt")
                         logger.info("Saved best epoch {0}, best accuracy {1}".format(epoch, best_accuracy))
-
+                model.train()
 
 
 if __name__ == "__main__":
@@ -116,6 +117,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = add_concept_args(parser)
     parser = add_span_gat_args(parser)
+    parser = add_ner_srl_args(parser)
     parser.add_argument('--patience', type=int, default=20, help='Patience')
     parser.add_argument('--dropout', type=float, default=0.6, help='Dropout.')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')

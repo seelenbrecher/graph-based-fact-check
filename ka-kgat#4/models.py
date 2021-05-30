@@ -114,6 +114,34 @@ class inference_model(nn.Module):
                 Linear(self.bert_hidden_dim * 2, self.node_dim)
             )
         
+        
+        # learned params for SRL
+        self.srl_node_embed = nn.Embedding(args.srl_n_node_types, self.node_dim)
+        self.srl_node_proj = nn.Linear(self.node_dim, 1)
+        
+        self.srl_lstm_hidden_dim = args.srl_lstm_hidden_dim
+        self.srl_lstm_num_layers = args.srl_lstm_num_layers
+        self.srl_lstm_droput = args.srl_lstm_droput
+        self.srl_lstm_bidirectional = args.srl_lstm_bidirectional
+        self.srl_graph_proj = nn.LSTM(input_size=self.node_dim, hidden_size=self.srl_lstm_hidden_dim,
+                            num_layers=self.srl_lstm_num_layers, dropout=self.srl_lstm_droput,
+                            bidirectional=self.srl_lstm_bidirectional)
+
+        graph_proj_dim = 2 * self.srl_lstm_hidden_dim # concatenate (clam + evi), self.node_dim each
+        if self.srl_lstm_bidirectional:
+            graph_proj_dim *= 2
+        self.graph_to_pred_proj = nn.Sequential(
+            Linear(graph_proj_dim, 64),
+            ReLU(True),
+            Linear(64, 3)
+        )
+        self.claim_evi_completion_proj = nn.Sequential( # projection whether a node contain information in the claim
+            Linear(graph_proj_dim, 64),
+            ReLU(True),
+            Linear(64, 1)
+        )
+        
+        
         self.proj_inference_de = nn.Linear(self.node_dim * 2, self.num_labels)
         self.proj_att = nn.Linear(self.kernel, 1)
         self.proj_input_de = nn.Linear(self.node_dim, self.node_dim)
@@ -184,6 +212,202 @@ class inference_model(nn.Module):
         log_pooling_sum = F.softmax(log_pooling_sum, dim=1)
         return log_pooling_sum
     
+    def get_ner_repr(self, inputs, masks):
+        batch_size, _, _, n_dim = inputs.shape
+        
+        def _node_reprs_per_batch(input, mask):
+            ner_nodes = input[:, mask]
+            
+            ones = torch.ones((ner_nodes.shape[2]), dtype=int).cuda()
+            m = torch.where(mask > 0, ones, mask)
+            token_cnt = m.sum(1) + 1e-9
+            
+            mult = (m / token_cnt.unsqueeze(-1)).unsqueeze(-1)
+            node_reprs = ner_nodes * mult
+            node_reprs = node_reprs.sum(2)
+            
+            return node_reprs
+        
+        ner_node_reprs = torch.cat([_node_reprs_per_batch(input, mask) for input, mask in zip(inputs, masks)])
+        ner_node_reprs = ner_node_reprs.view(batch_size, self.evi_num, -1, n_dim) # -1 = n_ner
+        
+        return ner_node_reprs
+    
+    def get_srl_repr(self, inputs, masks):
+        batch_size, _, _, n_dim = inputs.shape
+        
+        def _node_reprs_per_batch(input, mask):
+            evi_len, n_token, n_dim = input.shape
+            _, n_ner, n_token_per_ner = mask.shape
+            
+            srl_nodes = torch.cat([inp[msk] for inp, msk in zip(input, mask)]).view(evi_len, n_ner, n_token_per_ner, n_dim)
+            
+            ones = torch.ones((srl_nodes.shape[1], srl_nodes.shape[2]), dtype=int).cuda()
+            m = torch.where(mask > 0, ones, mask)
+            token_cnt = m.sum(2) + 1e-9
+            
+            mult = (m / token_cnt.unsqueeze(-1)).unsqueeze(-1)
+            node_reprs = srl_nodes * mult
+            node_reprs = node_reprs.sum(2)
+            
+            return node_reprs
+        
+        node_reprs = torch.cat([_node_reprs_per_batch(input, mask) for input, mask in zip(inputs, masks)])
+        node_reprs = node_reprs.view(batch_size, self.evi_num, -1, n_dim) # -1 = n_ner
+        
+        return node_reprs
+    
+    def refine_graph_with_ner(self, ner, ner_tagid, evi_srls, evi_tags):
+        batch_size, _, n_ner, _ = ner.shape    
+        batch_size, _, n_evi_srl, n_dim = evi_srls.shape
+
+        ner = ner.view(batch_size * self.evi_num, 1, -1)
+        evi_srls = evi_srls.view(batch_size * self.evi_num, evi_srls.shape[2], evi_srls.shape[3])
+        ner_tagid = ner_tagid.repeat((1, self.evi_num, 1))
+        ner_tagid = ner_tagid.view(batch_size * self.evi_num, -1)
+        evi_tags = evi_tags.view(batch_size * self.evi_num, -1)
+
+        # get node alignment scores
+        node_scores = torch.bmm(ner, evi_srls.transpose(1, 2))
+
+        # get type alignment scores
+        ner_tag_embed = self.srl_node_embed(ner_tagid)
+        ner_tag_scores = self.srl_node_proj(ner_tag_embed)
+
+        evi_tag_embed = self.srl_node_embed(evi_tags)
+        evi_tags_scores = self.srl_node_proj(evi_tag_embed)
+
+        type_scores = torch.bmm(ner_tag_scores, evi_tags_scores.transpose(1, 2))
+
+        # get total scores
+        alignment_scores = node_scores * type_scores
+        alignment_scores = F.softmax(alignment_scores, dim=2).view(batch_size * self.evi_num, n_ner, n_evi_srl)
+        alignment_scores = alignment_scores.squeeze(1).unsqueeze(-1)
+        
+        refined_evi_srls = evi_srls * alignment_scores
+        refined_evi_srls = refined_evi_srls.view(batch_size, self.evi_num, n_evi_srl, -1)
+        
+        zeros = torch.zeros((batch_size, self.evi_num, 1, n_dim)).cuda() # for [PAD] idx in path
+        refined_evi_srls = torch.cat((refined_evi_srls, zeros), 2)
+        
+        return refined_evi_srls #(batch_size, self.evi_num, n_ner, n_dim)
+    
+    def _get_path_reprs(self, inputs, paths):
+        batch_size, _, n_node, n_dim = inputs.shape
+        _, _, n_path, n_token = paths.shape
+
+        inputs = inputs.view(-1, n_node, n_dim)
+        paths = paths.view(-1, n_path * n_token)
+        
+        temp = paths.unsqueeze(2).expand(paths.size(0), paths.size(1), inputs.size(2))
+        path_reprs = torch.gather(inputs, 1, temp)
+        path_reprs = path_reprs.view(batch_size, self.evi_num, n_path, n_token, n_dim)
+
+        return path_reprs #(batch_size, evi_num, n_path, n_token_per_path, n_dim)
+
+    def get_graph_reprs(self, path_reprs):
+        batch_size, _, n_token, n_dim = path_reprs.shape
+
+        path_reprs = path_reprs.view(-1, n_token, n_dim)
+
+        output, _ = self.srl_graph_proj(path_reprs)
+        output = output.mean(dim=1)
+        output = output.view(batch_size, self.evi_num, output.shape[1])
+
+        return output
+
+    def get_ner_important_scores(self, inputs, ner_reprs):
+        batch_size, _, n_token, n_dim = inputs.shape
+        _, _, n_ner, _ = ner_reprs.shape
+
+        inputs = inputs.view(-1, n_token, n_dim)
+        ner_reprs = ner_reprs.view(-1, n_ner, n_dim)
+
+        scores = torch.bmm(ner_reprs, inputs.transpose(1, 2))
+        scores = torch.sum(scores, dim=2)
+        scores = F.softmax(scores, dim=1)
+        scores = scores.view(batch_size, self.evi_num, -1)
+
+        return scores
+
+    def get_class_pred_per_ner(self, claim_reprs, claim_paths, evi_reprs, evi_paths):
+        #TODO ADD SRL TYPES
+        # get representations from paths
+        claim_path_reprs = self._get_path_reprs(claim_reprs, claim_paths)
+        evi_path_reprs = self._get_path_reprs(evi_reprs, evi_paths)
+
+        claim_graph_reprs = self.get_graph_reprs(claim_reprs)
+        evi_graph_reprs = self.get_graph_reprs(evi_reprs)
+
+        reprs = torch.cat((claim_graph_reprs, evi_graph_reprs), dim=2)
+        per_evi_pred = self.graph_to_pred_proj(reprs)
+        
+        evi_completion = self.claim_evi_completion_proj(reprs)
+
+        return per_evi_pred, evi_completion
+    
+    
+    def predict_single_node(self, inputs, srl_tensor):
+        ner_input, claim_srl_input, evi_srl_input = srl_tensor
+        ner_masks, ner_tagids = ner_input
+        claim_masks, claim_tags, claim_paths = claim_srl_input
+        evi_masks, evi_tags, evi_paths = evi_srl_input
+        _, n_ner = ner_tagids.shape
+        
+        batch_size, n_ner, max_len = ner_masks.shape
+        
+        # separate inputs per batch
+        _, n_token, n_dim = inputs.shape
+        inputs = inputs.view(batch_size, self.evi_num, n_token, n_dim)
+        
+        # get NER node representation
+        ner_node_reprs = self.get_ner_repr(inputs, ner_masks)
+        
+        # get claim node graph representation
+        claim_srl_reprs = self.get_srl_repr(inputs, claim_masks)
+        zeros = torch.zeros((batch_size, self.evi_num, 1, n_dim)).cuda() # for [PAD] idx in path
+        claim_srl_reprs = torch.cat((claim_srl_reprs, zeros), 2)
+        
+        # get evi node graph reprensetation
+        evi_srl_reprs = self.get_srl_repr(inputs, evi_masks)
+        
+        # refined evidence node representations
+        refined_evi_reprs = []
+        for index in range(n_ner):
+            idx = torch.LongTensor([index]).cuda()
+            ner = torch.index_select(ner_node_reprs, 2, idx)
+            ner_tagid = torch.index_select(ner_tagids, 1, idx)
+            refined_evi_reprs.append(self.refine_graph_with_ner(ner, ner_tagid, evi_srl_reprs, evi_tags))
+        refined_evi_reprs = torch.cat(refined_evi_reprs)
+        refined_evi_reprs = refined_evi_reprs.view(n_ner, batch_size, self.evi_num, refined_evi_reprs.shape[2], refined_evi_reprs.shape[3])
+        refined_evi_reprs = refined_evi_reprs.permute(1, 2, 0, 3, 4) # (bs, evi_num, n_ner, n_bert_token, n_bert_dim)
+        
+        # get class prediction per NER
+        class_preds, evi_completions = [], []
+        for index in range(n_ner):
+            idx = torch.LongTensor([index]).cuda()
+            evi_repres = torch.index_select(refined_evi_reprs, 2, idx).squeeze(2)
+            class_pred, evi_completion = self.get_class_pred_per_ner(claim_srl_reprs, claim_paths, evi_repres, evi_paths)
+            class_preds.append(class_pred)
+            evi_completions.append(evi_completion)
+
+        class_preds = torch.cat(class_preds)
+        class_preds = class_preds.view(n_ner, batch_size, self.evi_num, 3)
+        class_preds = class_preds.permute(1, 2, 0, 3)
+        
+        ner_important_scores = self.get_ner_important_scores(inputs, ner_node_reprs)
+        final_scores = class_preds * ner_important_scores.unsqueeze(-1)
+        final_scores = final_scores.sum(2)
+        
+        evi_completions = torch.cat(evi_completions)
+        evi_completions = evi_completions.view(n_ner, batch_size, self.evi_num, 1)
+        evi_completions = evi_completions.permute(1, 2, 0, 3)
+        evi_completions = evi_completions.sum(2)
+        evi_completions = F.sigmoid(evi_completions.max(1)[0])
+        
+        return final_scores, evi_completions
+        
+    
     def initialize_node(self, token_level_bert, t2c_tensor, tpool_tensor, graph_tensor):
         """
         initialize word-level node representation
@@ -216,7 +440,7 @@ class inference_model(nn.Module):
         
 
     def forward(self, inputs):
-        bert_tensor, comb_tensor, graph_tensor, tpool_tensor = inputs
+        bert_tensor, comb_tensor, graph_tensor, tpool_tensor, srl_tensor = inputs
         inp_tensor, msk_tensor, seg_tensor = bert_tensor
         comb_inp_tensor, comb_msk_tensor, comb_seg_tensor = comb_tensor
         
@@ -253,6 +477,9 @@ class inference_model(nn.Module):
         select_prob = F.softmax(log_pooling_sum, dim=1)
         evi_prob = F.sigmoid(log_pooling_sum) # to calculate loss funciton on evidence selection
         
+        single_pred, evi_completions = self.predict_single_node(inputs_hiddens, srl_tensor)
+        evi_completions = evi_completions.unsqueeze(-1)
+        
         # calculate Edge kernel
         inputs = inputs.view([-1, self.evi_num, self.bert_hidden_dim])
         inputs_hiddens = inputs_hiddens.view([-1, self.evi_num, self.max_len, self.node_dim])
@@ -268,7 +495,9 @@ class inference_model(nn.Module):
         inputs_att = torch.cat([inputs_att, inputs_att_de], -1)
         inference_feature = self.proj_inference_de(inputs_att)
         class_prob = F.softmax(inference_feature, dim=2)
-        prob = torch.sum(select_prob * class_prob, 1)
+        
+        final_prob = (single_pred * evi_completions) + (class_prob * (1 - evi_completions)) # combine single pred and multiple pred
+        prob = torch.sum(select_prob * final_prob, 1)
         prob = torch.log(prob)
         return prob, evi_prob
 

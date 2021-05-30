@@ -5,12 +5,55 @@ TAGS = ['ARG', 'V', 'TMP', 'LOC', 'ADV', 'MNR', 'PRD', 'DIR', 'CAU', 'PNC', 'DIS
         'EVENT', 'WORK_OF_ART', 'LAW', 'LANGUAGE', 'DATE', 'TIME',
         'PERCENT', 'MONEY', 'QUANTITY', 'ORDINAL', 'CARDINAL']
 
+
 def add_ner_srl_args(parser):
-    parser.add_argument('--ner_srl_train_path', default='../data/srl_and_ner/train.json', type=str)
-    parser.add_argument('--ner_srl_val_path', default='../data/srl_and_ner/eval.json', type=str)
-    parser.add_argument('--ner_srl_test_path', default='../data/srl_and_ner/test.json', type=str)
+    parser.add_argument('--ner_srl_train_path', default='../data/fever_srl_and_ner/train.json', type=str)
+    parser.add_argument('--ner_srl_eval_path', default='../data/fever_srl_and_ner/eval.json', type=str)
+    parser.add_argument('--ner_srl_test_path', default='../data/fever_srl_and_ner/test.json', type=str)
+    parser.add_argument('--srl_n_node_types', default=29, type=int)
+    
+    # lstm
+    parser.add_argument('--srl_lstm_hidden_dim', default=128, type=int)
+    parser.add_argument('--srl_lstm_num_layers', default=4, type=int)
+    parser.add_argument('--srl_lstm_droput', default=0.1, type=int)
+    parser.add_argument('--srl_lstm_bidirectional', default=True)
     
     return parser
+
+def process_sent(sentence):
+    sentence = re.sub(" LSB.*?RSB", "", sentence)
+    sentence = re.sub("LRB RRB ", "", sentence)
+    sentence = re.sub("LRB", " ( ", sentence)
+    sentence = re.sub("RRB", " )", sentence)
+    sentence = re.sub("--", "-", sentence)
+    sentence = re.sub("``", '"', sentence)
+    sentence = re.sub("''", '"', sentence)
+
+    return sentence
+
+def process_wiki_title(title):
+    title = re.sub("_", " ", title)
+    title = re.sub("LRB", " ( ", title)
+    title = re.sub("RRB", " )", title)
+    title = re.sub("COLON", ":", title)
+    return title
+
+
+def _truncate_seq_pair(tokens_a, tokens_b, max_length):
+    """Truncates a sequence pair in place to the maximum length."""
+
+    # This is a simple heuristic which will always truncate the longer sequence
+    # one token at a time. This makes more sense than truncating an equal percent
+    # of tokens from each, since if one sequence is very short then each token
+    # that's truncated likely contains more information than a longer sequence.
+    while True:
+        total_length = len(tokens_a) + len(tokens_b)
+        if total_length <= max_length:
+            break
+        if len(tokens_a) > len(tokens_b):
+            tokens_a.pop()
+        else:
+            tokens_b.pop()
 
 def get_bounds(tokens):
     """
@@ -369,21 +412,24 @@ def get_merged_tokens(sentence, tokenizer, max_seq_length):
     return merged_tokens
 
 
-def pad_ner_masks(ner_masks, MAX_SEQ_LENGTH=130):
+def pad_ner_masks(ner_masks):
     """
-    (batch_size, n_ner, MAX_SEQ_LENGTH)
+    (batch_size, n_ner, n_node)
     """
     max_n_ner = 0
+    max_n_node = 0
     for ner_mask in ner_masks:
         max_n_ner = max(max_n_ner, len(ner_mask))
+        for mask_per_node in ner_mask:
+            max_n_node = max(max_n_node, len(mask_per_node))
         
     for i, ner_mask in enumerate(ner_masks):
         for j, nm in enumerate(ner_mask):
-            ner_mask[j] = nm[:MAX_SEQ_LENGTH]
-            ner_mask[j] += [0] * (MAX_SEQ_LENGTH - len(nm))
+            ner_mask[j] = nm[:max_n_node]
+            ner_mask[j] += [0] * (max_n_node - len(nm))
         
         if len(ner_mask) < max_n_ner:
-            ner_masks[i] += np.zeros((max_n_ner - len(ner_mask), MAX_SEQ_LENGTH), dtype=int).tolist() 
+            ner_masks[i] += np.zeros((max_n_ner - len(ner_mask), max_n_node), dtype=int).tolist() 
 
             
 def pad_ner_tagids(ner_tagids):
@@ -399,24 +445,27 @@ def pad_ner_tagids(ner_tagids):
             ner_tagids[i] += np.zeros((max_n_ner - len(ner_tag)), dtype=int).tolist()
             
 
-def pad_srl_masks(items, EVI_LEN=5, MAX_SEQ_LENGTH=130):
+def pad_srl_masks(items, EVI_LEN=5):
     """
-    (batch_size, EVI_LEN, n_node, MAX_TOKEN)
+    (batch_size, EVI_LEN, n_node, n_token)
     """
     max_n_node = 0
+    max_n_token = 0
     for item in items:
         for item_per_evi in item:
             max_n_node = max(max_n_node, len(item_per_evi))
-        
+            for item_per_node in item_per_evi:
+                max_n_token = max(max_n_token, len(item_per_node))
+    
     for i, item in enumerate(items):
         for j, item_per_evi in enumerate(item):
             for k, item_per_node in enumerate(item_per_evi):
-                item_per_evi[k] = item_per_node[:MAX_SEQ_LENGTH]
-                item_per_evi[k] += [0] * (MAX_SEQ_LENGTH - len(item_per_node))
+                item_per_evi[k] = item_per_node[:max_n_token]
+                item_per_evi[k] += [0] * (max_n_token - len(item_per_node))
             if len(item_per_evi) < max_n_node:
-                item[j] += np.zeros((max_n_node - len(item_per_evi), MAX_SEQ_LENGTH), dtype=int).tolist()
-        if len(item_per_evi) < EVI_LEN:
-            items[i] += np.zeros((EVI_LEN - len(item_per_evi), max_n_node, MAX_SEQ_LENGTH), dtype=int).tolist()
+                item[j] += np.zeros((max_n_node - len(item_per_evi), max_n_token), dtype=int).tolist()
+        if len(item) < EVI_LEN:
+            items[i] += np.zeros((EVI_LEN - len(item), max_n_node, max_n_token), dtype=int).tolist()
             
 
 def pad_srl_tags(items, EVI_LEN=5):
@@ -432,11 +481,11 @@ def pad_srl_tags(items, EVI_LEN=5):
         for j, item_per_evi in enumerate(item):
             if len(item_per_evi) < max_n_node:
                 item[j] += np.zeros((max_n_node - len(item_per_evi)), dtype=int).tolist()
-        if len(item_per_evi) < EVI_LEN:
-            items[i] += np.zeros((EVI_LEN - len(item_per_evi), max_n_node), dtype=int).tolist()
+        if len(item) < EVI_LEN:
+            items[i] += np.zeros((EVI_LEN - len(item), max_n_node), dtype=int).tolist()
             
 
-def pad_srl_paths(items, EVI_LEN=5):
+def pad_srl_paths(items, PAD_VAL=-1, EVI_LEN=5):
     """
     (batch_size, EVI_LEN, n_path, path_len)
     """
@@ -452,63 +501,105 @@ def pad_srl_paths(items, EVI_LEN=5):
         for j, item_per_evi in enumerate(item):
             for k, item_per_path in enumerate(item_per_evi):
                 item_per_evi[k] = item_per_path[:max_path_len]
-                item_per_evi[k] += [0] * (max_path_len - len(item_per_path))
+                item_per_evi[k] += [PAD_VAL] * (max_path_len - len(item_per_path))
             if len(item_per_evi) < max_n_path:
-                item[j] += np.zeros((max_n_path - len(item_per_evi), max_path_len), dtype=int).tolist()
-        if len(item_per_evi) < EVI_LEN:
-            items[i] += np.zeros((EVI_LEN - len(item_per_evi), max_n_path, max_path_len), dtype=int).tolist()
+                item[j] += (np.zeros((max_n_path - len(item_per_evi), max_path_len), dtype=int)+PAD_VAL).tolist()
+        if len(item) < EVI_LEN:
+            items[i] += (np.zeros((EVI_LEN - len(item), max_n_path, max_path_len), dtype=int)+PAD_VAL).tolist()
 
             
-def generate_srl_ner_input(examples, srls_and_ners, tokenizer, EVI_LEN=5, MAX_SEQ_LENGTH=130):
-    batch_size = len(examples)
+# def generate_srl_ner_input(examples, srls_and_ners, tokenizer, EVI_LEN=5, MAX_SEQ_LENGTH=130):
+#     batch_size = len(examples)
     
-    batch_ner_masks = [] # supposed to be (batch_size, n_ner, MAX_TOKEN)
+#     batch_ner_masks = [] # supposed to be (batch_size, n_ner, MAX_TOKEN)
+#     batch_ner_tag_ids = [] # (batch_size, n_ner)
+    
+#     batch_claim_masks = [] # supposed to be (batch_size, n_evi, n_node, MAX_TOKEN)
+#     batch_claim_tags = [] # (batch_size, n_evi, n_node)
+#     batch_claim_paths = [] # (batch_size, n_evi, n_path, path_len)
+    
+#     batch_evi_masks = [] # supposed to be (batch_size, n_evi, n_node, MAX_TOKEN)
+#     batch_evi_tags = [] # (batch_size, n_evi, n_node)
+#     batch_evi_paths = [] # (batch_size, n_evi, n_path, path_len)
+    
+#     for example, srl_and_ner in zip(examples, srls_and_ners):
+#         claim_srl = srl_and_ner['claim_srl']
+#         claim_ner = srl_and_ner['claim_ner']
+#         evis_srl = srl_and_ner['evis_srl']
+
+#         merged_tokens = get_merged_tokens(example[0], tokenizer, MAX_SEQ_LENGTH)
+#         ner_masks, ner_tag_ids = extract_ner(merged_tokens, claim_ner, claim_srl)
+        
+#         claim_graphs = []
+#         evi_graphs = []
+#         for ex, evi_srl in zip(example, evis_srl):
+#             merged_tokens = get_merged_tokens(ex, tokenizer, MAX_SEQ_LENGTH)
+#             claim_graph, evi_graph = construct_srl_graph(merged_tokens, claim_srl, evi_srl)
+#             claim_graphs.append(claim_graph)
+#             evi_graphs.append(evi_graph)
+#         batch_ner_masks.append(ner_masks)
+#         batch_ner_tag_ids.append(ner_tag_ids)
+        
+#         batch_claim_tags.append([a[0] for a in claim_graphs])
+#         batch_claim_masks.append([a[1] for a in claim_graphs])
+#         batch_claim_paths.append([a[2] for a in claim_graphs])
+        
+#         batch_evi_tags.append([a[0] for a in evi_graphs])
+#         batch_evi_masks.append([a[1] for a in evi_graphs])
+#         batch_evi_paths.append([a[2] for a in evi_graphs])
+        
+#     pad_ner_masks(batch_ner_masks, MAX_SEQ_LENGTH)
+#     pad_ner_tagids(batch_ner_tag_ids)
+    
+#     pad_srl_masks(batch_claim_masks, EVI_LEN, MAX_SEQ_LENGTH)
+#     pad_srl_tags(batch_claim_tags, EVI_LEN)
+#     pad_srl_paths(batch_claim_paths, EVI_LEN)
+    
+#     pad_srl_masks(batch_evi_masks, EVI_LEN, MAX_SEQ_LENGTH)
+#     pad_srl_tags(batch_evi_tags, EVI_LEN)
+#     pad_srl_paths(batch_evi_paths, EVI_LEN)
+    
+#     ner_input = (batch_ner_masks, batch_ner_tag_ids)
+#     claim_srl_input = (batch_claim_masks, batch_claim_tags, batch_claim_paths)
+#     evi_srl_input = (batch_evi_masks, batch_evi_tags, batch_evi_paths)
+#     return ner_input, claim_srl_input, evi_srl_input
+
+def generate_srl_ner_input(srls_and_ners, EVI_LEN=5, MAX_SEQ_LENGTH=130):
+    batch_size = len(srls_and_ners)
+    
+    batch_ner_masks = [] # supposed to be (batch_size, n_ner, n_node)
     batch_ner_tag_ids = [] # (batch_size, n_ner)
     
-    batch_claim_masks = [] # supposed to be (batch_size, n_evi, n_node, MAX_TOKEN)
+    batch_claim_masks = [] # supposed to be (batch_size, n_evi, n_node, n_token)
     batch_claim_tags = [] # (batch_size, n_evi, n_node)
     batch_claim_paths = [] # (batch_size, n_evi, n_path, path_len)
     
-    batch_evi_masks = [] # supposed to be (batch_size, n_evi, n_node, MAX_TOKEN)
+    batch_evi_masks = [] # supposed to be (batch_size, n_evi, n_node, n_token)
     batch_evi_tags = [] # (batch_size, n_evi, n_node)
     batch_evi_paths = [] # (batch_size, n_evi, n_path, path_len)
     
-    for example, srl_and_ner in zip(examples, srls_and_ners):
-        claim_srl = srl_and_ner['claim_srl']
-        claim_ner = srl_and_ner['claim_ner']
-        evis_srl = srl_and_ner['evis_srl']
-
-        merged_tokens = get_merged_tokens(example[0], tokenizer, MAX_SEQ_LENGTH)
-        ner_masks, ner_tag_ids = extract_ner(merged_tokens, claim_ner, claim_srl)
+    for srl_and_ner in srls_and_ners:
+        batch_ner_masks.append(srl_and_ner['ner_masks'])
+        batch_ner_tag_ids.append(srl_and_ner['ner_tag_ids'])
         
-        claim_graphs = []
-        evi_graphs = []
-        for ex, evi_srl in zip(example, evis_srl):
-            merged_tokens = get_merged_tokens(ex, tokenizer, MAX_SEQ_LENGTH)
-            claim_graph, evi_graph = construct_srl_graph(merged_tokens, claim_srl, evi_srl)
-            claim_graphs.append(claim_graph)
-            evi_graphs.append(evi_graph)
-        batch_ner_masks.append(ner_masks)
-        batch_ner_tag_ids.append(ner_tag_ids)
+        batch_claim_tags.append(srl_and_ner['claim_tags'])
+        batch_claim_masks.append(srl_and_ner['claim_masks'])
+        batch_claim_paths.append(srl_and_ner['claim_paths'])
         
-        batch_claim_tags.append([a[0] for a in claim_graphs])
-        batch_claim_masks.append([a[1] for a in claim_graphs])
-        batch_claim_paths.append([a[2] for a in claim_graphs])
-        
-        batch_evi_tags.append([a[0] for a in evi_graphs])
-        batch_evi_masks.append([a[1] for a in evi_graphs])
-        batch_evi_paths.append([a[2] for a in evi_graphs])
-        
-    pad_ner_masks(batch_ner_masks, MAX_SEQ_LENGTH)
+        batch_evi_tags.append(srl_and_ner['evi_tags'])
+        batch_evi_masks.append(srl_and_ner['evi_masks'])
+        batch_evi_paths.append(srl_and_ner['evi_paths'])
+    
+    pad_ner_masks(batch_ner_masks)
     pad_ner_tagids(batch_ner_tag_ids)
     
-    pad_srl_masks(batch_claim_masks, EVI_LEN, MAX_SEQ_LENGTH)
+    pad_srl_masks(batch_claim_masks, EVI_LEN)
     pad_srl_tags(batch_claim_tags, EVI_LEN)
-    pad_srl_paths(batch_claim_paths, EVI_LEN)
+    pad_srl_paths(batch_claim_paths, len(batch_claim_masks[0][0]), EVI_LEN)
     
-    pad_srl_masks(batch_evi_masks, EVI_LEN, MAX_SEQ_LENGTH)
+    pad_srl_masks(batch_evi_masks, EVI_LEN)
     pad_srl_tags(batch_evi_tags, EVI_LEN)
-    pad_srl_paths(batch_evi_paths, EVI_LEN)
+    pad_srl_paths(batch_evi_paths, len(batch_evi_masks[0][0]), EVI_LEN)
     
     ner_input = (batch_ner_masks, batch_ner_tag_ids)
     claim_srl_input = (batch_claim_masks, batch_claim_tags, batch_claim_paths)

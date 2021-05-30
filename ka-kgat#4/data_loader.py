@@ -7,6 +7,7 @@ from torch.autograd import Variable
 
 from prepare_concept import GraphConstructor, bert_concept_alignment
 from prepare_concept import CONCEPT_DUMMY_IDX
+from prepare_ner_and_srl import generate_srl_ner_input
 
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
@@ -191,9 +192,10 @@ class DataLoader(object):
         self.data_path = data_path
         examples = self.read_file(data_path)
         self.examples = examples
-        inputs, labels = list(zip(* examples))
+        inputs, labels, ids = list(zip(* examples))
         self.inputs = inputs
         self.labels = labels
+        self.ids = ids
         self.test = test
         self.graph_constructor = GraphConstructor(args)
 
@@ -204,7 +206,24 @@ class DataLoader(object):
             self.total_step = self.total_num / batch_size
             self.shuffle()
         self.step = 0
+        
+        self.ner_file_path = args.ner_srl_train_path
+        if 'eval' in self.data_path:
+            self.ner_file_path = args.ner_srl_eval_path
+        elif 'dev' in self.data_path:
+            self.ner_file_path = args.ner_srl_dev_path
+        elif 'test' in self.data_path:
+            self.ner_file_path = args.ner_srl_test_path
+        
+        self.read_srl_and_ner_file()
 
+
+    def read_srl_and_ner_file(self):
+        self.srl_and_ner_data = {}
+        with open(self.ner_file_path, 'r') as f:
+            for step, line in enumerate(f):
+                instance = json.loads(line.strip())
+                self.srl_and_ner_data[instance['id']] = instance
 
 
     def read_file(self, data_path):
@@ -226,7 +245,8 @@ class DataLoader(object):
                 if len(evi_labels) != self.evi_num:
                     evi_labels += [-1.0] * (self.evi_num - len(evi_labels))
                 evi_list = evi_list[:self.evi_num]
-                examples.append([evi_list, (label, evi_labels)])
+                id = instance['id']
+                examples.append([evi_list, (label, evi_labels), id])
         return examples
 
 
@@ -274,6 +294,7 @@ class DataLoader(object):
             for step in range(len(inputs)):
                 bert_inp, comb_inp, graph_inp, tpool = tok2int_list(inputs[step], self.tokenizer, self.max_len, 
                                                                     self.graph_constructor, self.evi_num)
+                
                 inp, msk, seg = bert_inp
                 t2c, comb_msk, comb_seg = comb_inp
                 head_idx, tail_idx, rel_idx = graph_inp
@@ -290,7 +311,11 @@ class DataLoader(object):
                 rel_idx_inputs += rel_idx
                 
                 tpool_inputs += tpool
-
+            
+            ids = self.ids[self.step * self.batch_size : (self.step+1)*self.batch_size]
+            srls_and_ners = [self.srl_and_ner_data[id] for id in ids]
+            ner_input, claim_srl_input, evi_srl_input = generate_srl_ner_input(srls_and_ners, self.evi_num, self.max_len)
+            
             inp_tensor_input = Variable(
                 torch.LongTensor(inp_padding_inputs)).view(-1, self.evi_num, self.max_len)
             msk_tensor_input = Variable(
@@ -318,6 +343,15 @@ class DataLoader(object):
             rel_msk_tensor_input[rel_msk_tensor_input!=-1] = 1 # set mask, 1 for valid rel, 0 for not
             rel_msk_tensor_input[rel_msk_tensor_input==-1] = 0
             
+            # ner and srl input. all of them already padded correctly
+            ner_masks_tensor_input = Variable(torch.LongTensor(ner_input[0]))
+            ner_tagids_tensor_input = Variable(torch.LongTensor(ner_input[1]))
+            claim_masks_tensor_input = Variable(torch.LongTensor(claim_srl_input[0]))
+            claim_tags_tensor_input = Variable(torch.LongTensor(claim_srl_input[1]))
+            claim_paths_tensor_input = Variable(torch.LongTensor(claim_srl_input[2]))
+            evi_masks_tensor_input = Variable(torch.LongTensor(evi_srl_input[0]))
+            evi_tags_tensor_input = Variable(torch.LongTensor(evi_srl_input[1]))
+            evi_paths_tensor_input = Variable(torch.LongTensor(evi_srl_input[2]))
             
             tpool_tensor_input = Variable(
                 torch.FloatTensor(tpool_inputs)).view(-1, self.evi_num, self.max_len, self.max_len)
@@ -339,6 +373,15 @@ class DataLoader(object):
                 rel_idx_tensor_input = rel_idx_tensor_input.cuda()
                 rel_msk_tensor_input = rel_msk_tensor_input.cuda()
                 
+                ner_masks_tensor_input = ner_masks_tensor_input.cuda()
+                ner_tagids_tensor_input = ner_tagids_tensor_input.cuda()
+                claim_masks_tensor_input = claim_masks_tensor_input.cuda()
+                claim_tags_tensor_input = claim_tags_tensor_input.cuda()
+                claim_paths_tensor_input = claim_paths_tensor_input.cuda()
+                evi_masks_tensor_input = evi_masks_tensor_input.cuda()
+                evi_tags_tensor_input = evi_tags_tensor_input.cuda()
+                evi_paths_tensor_input = evi_paths_tensor_input.cuda()
+                
                 tpool_tensor_input = tpool_tensor_input.cuda()
                 lab_tensor = lab_tensor.cuda()
                 evi_lab_tensor = evi_lab_tensor.cuda()
@@ -347,14 +390,20 @@ class DataLoader(object):
             bert_inp_tensor = inp_tensor_input, msk_tensor_input, seg_tensor_input
             comb_inp_tensor = tok2concept_tensor_input, comb_msk_tensor_input, comb_seg_tensor_input
             graph_inp_tensor = edge_idx_tensor_input, rel_idx_tensor_input, rel_msk_tensor_input
-            return (bert_inp_tensor, comb_inp_tensor, graph_inp_tensor, tpool_tensor_input), (lab_tensor, evi_lab_tensor)
+            
+            ner_inp_tensor = (ner_masks_tensor_input, ner_tagids_tensor_input)
+            claim_srl_inp_tensor = (claim_masks_tensor_input, claim_tags_tensor_input, claim_paths_tensor_input)
+            evi_srl_inp_tensor = (evi_masks_tensor_input, evi_tags_tensor_input, evi_paths_tensor_input)
+            srl_inp_tensor = ner_inp_tensor, claim_srl_inp_tensor, evi_srl_inp_tensor
+            return (bert_inp_tensor, comb_inp_tensor, graph_inp_tensor, tpool_tensor_input, srl_inp_tensor), (lab_tensor, evi_lab_tensor)
         else:
             self.step = 0
             if not self.test:
                 self.shuffle()
-                inputs, labels = list(zip(*self.examples))
+                inputs, labels, ids = list(zip(*self.examples))
                 self.inputs = inputs
                 self.labels = labels
+                self.ids = ids
             raise StopIteration()
 
 class DataLoaderTest(object):
@@ -380,6 +429,23 @@ class DataLoaderTest(object):
         self.total_num = len(examples)
         self.total_step = np.ceil(self.total_num * 1.0 / batch_size)
         self.step = 0
+        
+        self.ner_file_path = args.ner_srl_train_path
+        if 'eval' in self.data_path:
+            self.ner_file_path = args.ner_srl_eval_path
+        elif 'dev' in self.data_path:
+            self.ner_file_path = args.ner_srl_dev_path
+        elif 'test' in self.data_path:
+            self.ner_file_path = args.ner_srl_test_path
+        
+        self.read_srl_and_ner_file()
+        
+    def read_srl_and_ner_file(self):
+        self.srl_and_ner_data = {}
+        with open(self.ner_file_path, 'r') as f:
+            for step, line in enumerate(f):
+                instance = json.loads(line.strip())
+                self.srl_and_ner_data[instance['id']] = instance
 
     def process_sent(self, sentence):
         sentence = re.sub(" LSB.*?RSB", "", sentence)
@@ -462,7 +528,10 @@ class DataLoaderTest(object):
                 rel_idx_inputs += rel_idx
                 
                 tpool_inputs += tpool
-
+            
+            srls_and_ners = [self.srl_and_ner_data[id] for id in ids]
+            ner_input, claim_srl_input, evi_srl_input = generate_srl_ner_input(srls_and_ners, self.evi_num, self.max_len)
+            
             inp_tensor_input = Variable(
                 torch.LongTensor(inp_padding_inputs)).view(-1, self.evi_num, self.max_len)
             msk_tensor_input = Variable(
@@ -490,6 +559,16 @@ class DataLoaderTest(object):
             rel_msk_tensor_input[rel_msk_tensor_input!=-1] = 1 # set mask, 1 for valid rel, 0 for not
             rel_msk_tensor_input[rel_msk_tensor_input==-1] = 0
             
+            # ner and srl input. all of them already padded correctly
+            ner_masks_tensor_input = Variable(torch.LongTensor(ner_input[0]))
+            ner_tagids_tensor_input = Variable(torch.LongTensor(ner_input[1]))
+            claim_masks_tensor_input = Variable(torch.LongTensor(claim_srl_input[0]))
+            claim_tags_tensor_input = Variable(torch.LongTensor(claim_srl_input[1]))
+            claim_paths_tensor_input = Variable(torch.LongTensor(claim_srl_input[2]))
+            evi_masks_tensor_input = Variable(torch.LongTensor(evi_srl_input[0]))
+            evi_tags_tensor_input = Variable(torch.LongTensor(evi_srl_input[1]))
+            evi_paths_tensor_input = Variable(torch.LongTensor(evi_srl_input[2]))
+            
             tpool_tensor_input = Variable(
                 torch.FloatTensor(tpool_inputs)).view(-1, self.evi_num, self.max_len, self.max_len)
 
@@ -506,6 +585,15 @@ class DataLoaderTest(object):
                 rel_idx_tensor_input = rel_idx_tensor_input.cuda()
                 rel_msk_tensor_input = rel_msk_tensor_input.cuda()
                 
+                ner_masks_tensor_input = ner_masks_tensor_input.cuda()
+                ner_tagids_tensor_input = ner_tagids_tensor_input.cuda()
+                claim_masks_tensor_input = claim_masks_tensor_input.cuda()
+                claim_tags_tensor_input = claim_tags_tensor_input.cuda()
+                claim_paths_tensor_input = claim_paths_tensor_input.cuda()
+                evi_masks_tensor_input = evi_masks_tensor_input.cuda()
+                evi_tags_tensor_input = evi_tags_tensor_input.cuda()
+                evi_paths_tensor_input = evi_paths_tensor_input.cuda()
+                
                 tpool_tensor_input = tpool_tensor_input.cuda()
 
             self.step += 1
@@ -513,7 +601,12 @@ class DataLoaderTest(object):
             bert_inp_tensor = inp_tensor_input, msk_tensor_input, seg_tensor_input
             comb_inp_tensor = tok2concept_tensor_input, comb_msk_tensor_input, comb_seg_tensor_input
             graph_inp_tensor = edge_idx_tensor_input, rel_idx_tensor_input, rel_msk_tensor_input
-            return (bert_inp_tensor, comb_inp_tensor, graph_inp_tensor, tpool_tensor_input), ids
+            
+            ner_inp_tensor = (ner_masks_tensor_input, ner_tagids_tensor_input)
+            claim_srl_inp_tensor = (claim_masks_tensor_input, claim_tags_tensor_input, claim_paths_tensor_input)
+            evi_srl_inp_tensor = (evi_masks_tensor_input, evi_tags_tensor_input, evi_paths_tensor_input)
+            srl_inp_tensor = ner_inp_tensor, claim_srl_inp_tensor, evi_srl_inp_tensor
+            return (bert_inp_tensor, comb_inp_tensor, graph_inp_tensor, tpool_tensor_input, srl_inp_tensor), ids
         else:
             self.step = 0
             raise StopIteration()
