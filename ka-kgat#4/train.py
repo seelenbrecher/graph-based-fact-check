@@ -82,16 +82,18 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
         model.train()
         optimizer.zero_grad()
         for index, data in enumerate(trainset_reader):
+            global_step += 1
             inputs, lab_tensor = data
             class_label, evi_labels = lab_tensor
             prob, evi_probs = model(inputs)
             loss = F.nll_loss(prob, class_label)
-            loss += F.binary_cross_entropy(evi_probs.squeeze(-1), evi_labels)
+            if not args.no_evidence_selection:
+                print('gak pake')
+                loss += F.binary_cross_entropy(evi_probs.squeeze(-1), evi_labels)
             running_loss += loss.item()
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
             loss.backward()
-            global_step += 1
             if global_step % args.gradient_accumulation_steps == 0:
                 optimizer.step()
                 scheduler.step()
@@ -152,6 +154,7 @@ if __name__ == "__main__":
                         type=int,
                         default=8,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
+    parser.add_argument('--no_evidence_selection', action='store_true', default=False)
     args = parser.parse_args()
 
     if not os.path.exists(args.outdir):

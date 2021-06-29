@@ -416,8 +416,8 @@ def pad_ner_masks(ner_masks):
     """
     (batch_size, n_ner, n_node)
     """
-    max_n_ner = 0
-    max_n_node = 0
+    max_n_ner = 1
+    max_n_node = 1
     for ner_mask in ner_masks:
         max_n_ner = max(max_n_ner, len(ner_mask))
         for mask_per_node in ner_mask:
@@ -449,8 +449,8 @@ def pad_srl_masks(items, EVI_LEN=5):
     """
     (batch_size, EVI_LEN, n_node, n_token)
     """
-    max_n_node = 0
-    max_n_token = 0
+    max_n_node = 1
+    max_n_token = 1
     for item in items:
         for item_per_evi in item:
             max_n_node = max(max_n_node, len(item_per_evi))
@@ -472,7 +472,7 @@ def pad_srl_tags(items, EVI_LEN=5):
     """
     (batch_size, EVI_LEN, n_node)
     """
-    max_n_node = 0
+    max_n_node = 1
     for item in items:
         for item_per_evi in item:
             max_n_node = max(max_n_node, len(item_per_evi))
@@ -485,7 +485,7 @@ def pad_srl_tags(items, EVI_LEN=5):
             items[i] += np.zeros((EVI_LEN - len(item), max_n_node), dtype=int).tolist()
             
 
-def pad_srl_paths(items, PAD_VAL=-1, EVI_LEN=5):
+def pad_srl_paths(items, PAD_VAL=-1, EVI_LEN=5, MAX_PATH_LEN=100):
     """
     (batch_size, EVI_LEN, n_path, path_len)
     """
@@ -496,7 +496,8 @@ def pad_srl_paths(items, PAD_VAL=-1, EVI_LEN=5):
             max_n_path = max(max_n_path, len(item_per_evi))
             for item_per_path in item_per_evi:
                 max_path_len = max(max_path_len, len(item_per_path))
-        
+    if max_path_len > MAX_PATH_LEN:
+        max_path_len = MAX_PATH_LEN
     for i, item in enumerate(items):
         for j, item_per_evi in enumerate(item):
             for k, item_per_path in enumerate(item_per_evi):

@@ -306,14 +306,14 @@ class inference_model(nn.Module):
         return path_reprs #(batch_size, evi_num, n_path, n_token_per_path, n_dim)
 
     def get_graph_reprs(self, path_reprs):
-        batch_size, _, n_token, n_dim = path_reprs.shape
+        batch_size, _, n_path, n_token, n_dim = path_reprs.shape
 
         path_reprs = path_reprs.view(-1, n_token, n_dim)
 
         output, _ = self.srl_graph_proj(path_reprs)
-        output = output.mean(dim=1)
-        output = output.view(batch_size, self.evi_num, output.shape[1])
-
+        output = output.mean(dim=1) # aggregate repr among token to get single path repr
+        output = output.view(batch_size, self.evi_num, n_path, output.shape[1])
+        output = output.mean(dim=2) # average repr among path to get graph repr
         return output
 
     def get_ner_important_scores(self, inputs, ner_reprs):
@@ -336,8 +336,8 @@ class inference_model(nn.Module):
         claim_path_reprs = self._get_path_reprs(claim_reprs, claim_paths)
         evi_path_reprs = self._get_path_reprs(evi_reprs, evi_paths)
 
-        claim_graph_reprs = self.get_graph_reprs(claim_reprs)
-        evi_graph_reprs = self.get_graph_reprs(evi_reprs)
+        claim_graph_reprs = self.get_graph_reprs(claim_path_reprs)
+        evi_graph_reprs = self.get_graph_reprs(evi_path_reprs)
 
         reprs = torch.cat((claim_graph_reprs, evi_graph_reprs), dim=2)
         per_evi_pred = self.graph_to_pred_proj(reprs)
@@ -497,6 +497,7 @@ class inference_model(nn.Module):
         class_prob = F.softmax(inference_feature, dim=2)
         
         final_prob = (single_pred * evi_completions) + (class_prob * (1 - evi_completions)) # combine single pred and multiple pred
+        final_prob = F.softmax(final_prob, dim=2)
         prob = torch.sum(select_prob * final_prob, 1)
         prob = torch.log(prob)
         return prob, evi_prob

@@ -242,6 +242,7 @@ class DataLoader(object):
                     evi_list.append(item)
                 label = self.label_map[instance['label']]
                 evi_labels = instance['evidence_labels'] if 'evidence_labels' in instance else [0.0] * len(instance['evidence'])
+                evi_labels = evi_labels[:self.evi_num]
                 if len(evi_labels) != self.evi_num:
                     evi_labels += [-1.0] * (self.evi_num - len(evi_labels))
                 evi_list = evi_list[:self.evi_num]
