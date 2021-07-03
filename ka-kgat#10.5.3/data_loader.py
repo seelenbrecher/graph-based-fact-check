@@ -5,7 +5,7 @@ import json
 import re
 from torch.autograd import Variable
 
-from prepare_concept import GraphConstructor, bert_concept_alignment, get_rel_inputs
+from prepare_concept import GraphConstructor, bert_concept_alignment, get_rel_inputs, bert_concept_alignment_roberta
 from prepare_concept import CONCEPT_DUMMY_IDX
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
@@ -25,7 +25,7 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
             tokens_b.pop()
 
 
-def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor):
+def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor, roberta=False):
     """Loads a data file into a list of `InputBatch`s."""
     sent_a, title, sent_b, c_concepts, e_concepts, head_indices, tail_indices, rel_ids = sentence
     tokens_a = tokenizer.tokenize(sent_a)
@@ -67,13 +67,16 @@ def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor):
         e_start_id, e_end_id = 1 + len(tokens_a) + 1 + len(tokens_t) + 1, 1 + len(tokens_a) + 1 + len(tokens_t) + 1 + len(tokens_b)
     else:
         e_start_id, c_end_id = -1, -1
-    merged_tokens, tok2concept, comb_input_mask, comb_segment_ids, tok_pool_mask = bert_concept_alignment(tokens, c_concepts, e_concepts,
+        
+        
+    if roberta:
+        merged_tokens, tok2concept, comb_input_mask, comb_segment_ids, tok_pool_mask = bert_concept_alignment_roberta(tokens, c_concepts, e_concepts,
                                                                                                (c_start_id, c_end_id), 
                                                                                                (e_start_id, e_end_id))
-    
-    import pdb
-    pdb.set_trace()
-    
+    else:
+        merged_tokens, tok2concept, comb_input_mask, comb_segment_ids, tok_pool_mask = bert_concept_alignment(tokens, c_concepts, e_concepts,
+                                                                                               (c_start_id, c_end_id), 
+                                                                                               (e_start_id, e_end_id))
     n_pad = (max_seq_length - len(tok2concept))
     tok2concept += [-1] * n_pad
     comb_input_mask += [0] * n_pad
@@ -92,7 +95,7 @@ def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor):
 
 
 
-def tok2int_list(src_list, tokenizer, max_seq_length, graph_constructor, max_seq_size=-1):
+def tok2int_list(src_list, tokenizer, max_seq_length, graph_constructor, max_seq_size=-1, roberta=False):
     inp_padding = list()
     msk_padding = list()
     seg_padding = list()
@@ -107,7 +110,7 @@ def tok2int_list(src_list, tokenizer, max_seq_length, graph_constructor, max_seq
     
     tok_pool_mask_padding = list()
     for step, sent in enumerate(src_list):
-        bert_input, combine_input, graph_input, tok_pool_mask = tok2int_sent(sent, tokenizer, max_seq_length, graph_constructor)
+        bert_input, combine_input, graph_input, tok_pool_mask = tok2int_sent(sent, tokenizer, max_seq_length, graph_constructor, roberta=roberta)
         input_ids, input_mask, input_seg = bert_input
         tok2concept, comb_mask, comb_seg = combine_input
         head_indices, tail_indices, rel_ids = graph_input
@@ -195,6 +198,7 @@ class DataLoader(object):
         self.labels = labels
         self.test = test
         self.graph_constructor = GraphConstructor(args)
+        self.roberta = args.roberta
 
         self.total_num = len(examples)
         if self.test:
@@ -210,8 +214,6 @@ class DataLoader(object):
         examples = list()
         with open(data_path) as fin:
             for step, line in enumerate(fin):
-                if step > 100:
-                    break
                 instance = json.loads(line.strip())
                 claim = instance['claim']
                 evi_list = list()
@@ -275,7 +277,7 @@ class DataLoader(object):
             rel_inp_ids, rel_segments = [], []
             for step in range(len(inputs)):
                 bert_inp, comb_inp, graph_inp, tpool = tok2int_list(inputs[step], self.tokenizer, self.max_len, 
-                                                                    self.graph_constructor, self.evi_num)
+                                                                    self.graph_constructor, self.evi_num, self.roberta)
                 inp, msk, seg = bert_inp
                 t2c, comb_msk, comb_seg = comb_inp
                 head_idx, tail_idx, rel_idx = graph_inp
@@ -383,6 +385,7 @@ class DataLoaderTest(object):
         inputs, ids = list(zip(* examples))
         self.inputs = inputs
         self.ids = ids
+        self.roberta = args.roberta
         
         self.graph_constructor = GraphConstructor(args)
         self.total_num = len(examples)
@@ -457,7 +460,7 @@ class DataLoaderTest(object):
             rel_inp_ids, rel_segments = [], []
             for step in range(len(inputs)):
                 bert_inp, comb_inp, graph_inp, tpool = tok2int_list(inputs[step], self.tokenizer, self.max_len, 
-                                                                    self.graph_constructor, self.evi_num)
+                                                                    self.graph_constructor, self.evi_num, self.roberta)
                 inp, msk, seg = bert_inp
                 t2c, comb_msk, comb_seg = comb_inp
                 head_idx, tail_idx, rel_idx = graph_inp

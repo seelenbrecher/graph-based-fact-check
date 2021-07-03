@@ -247,8 +247,6 @@ class inference_model(nn.Module):
         
 
     def forward(self, inputs, test=False, roberta=False):
-        import pdb
-        pdb.set_trace()
         self.roberta = roberta
         
         bert_tensor, comb_tensor, graph_tensor, tpool_tensor = inputs
