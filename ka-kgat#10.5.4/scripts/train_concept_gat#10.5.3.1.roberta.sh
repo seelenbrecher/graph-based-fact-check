@@ -12,8 +12,8 @@ rm ../checkpoint/$NAME/train_log.txt
 CUDA_VISIBLE_DEVICES=8 python train_roberta.py --outdir ../checkpoint/$NAME \
 --train_path ../data/fever_with_concepts_and_graph_roberta/train.json \
 --valid_path ../data/fever_with_concepts_and_graph_roberta/eval.json \
---bert_pretrain ../checkpoint/roberta_large_mlm \
---postpretrain ../checkpoint/roberta_large_mlm \
+--bert_pretrain ../checkpoint/roberta-large-mlm-1 \
+--postpretrain ../checkpoint/roberta-large-mlm-1 \
 --use_concept \
 --span_use_gat \
 --num_train_epochs 5 \

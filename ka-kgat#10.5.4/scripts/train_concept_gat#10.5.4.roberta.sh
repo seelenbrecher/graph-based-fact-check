@@ -4,32 +4,29 @@
 # --bert_pretrain ../bert_base \
 # --postpretrain ../pretrain/save_model/model.best.pt
 
-NAME=ka-kgat-concept-gat\#10.5.3.1.roberta
+NAME=ka-kgat-concept-gat\#10.5.4.robertaaai
 
 rm ../checkpoint/$NAME/train_log.txt
 
 # # use concept + gat
-CUDA_VISIBLE_DEVICES=8 python train_roberta.py --outdir ../checkpoint/$NAME \
---train_path ../data/fever_with_concepts_and_graph_roberta/train.json \
---valid_path ../data/fever_with_concepts_and_graph_roberta/eval.json \
+CUDA_VISIBLE_DEVICES=7 python train_roberta.py --outdir ../checkpoint/$NAME \
+--train_path ../data/fever_with_concepts_and_graph_roberta_1/train.json \
+--valid_path ../data/fever_with_concepts_and_graph_roberta_1/eval.json \
 --bert_pretrain ../checkpoint/roberta_large_mlm \
 --postpretrain ../checkpoint/roberta_large_mlm \
 --use_concept \
 --span_use_gat \
---num_train_epochs 5 \
+--num_train_epochs 3 \
 --span_gat_add_skip_conn \
 --span_gat_dropout 0.0 \
 --concept_dim 1024 \
 --node_dim 1024 \
---span_gat_n_features 1024 256 256 1 \
 --roberta \
---train_batch_size 4 \
---valid_batch_size 4 \
---learning_rate 3e-5
+--span_gat_n_features 1024 256 256 1
 
-CUDA_VISIBLE_DEVICES=8 python test_roberta.py --outdir ./output/ \
- --test_path ../data/fever_with_concepts_and_graph_roberta/eval.json \
- --bert_pretrain ../checkpoint/roberta-large-mlm-1 \
+CUDA_VISIBLE_DEVICES=7 python test_roberta.py --outdir ./output/ \
+ --test_path ../data/fever_with_concepts_and_graph_roberta_1/eval.json \
+ --bert_pretrain ../checkpoint/roberta_large_mlm \
  --checkpoint ../checkpoint/$NAME/model.best.pt \
  --use_concept \
  --span_use_gat \
@@ -43,9 +40,9 @@ CUDA_VISIBLE_DEVICES=8 python test_roberta.py --outdir ./output/ \
 
 python fever_score_test.py --predicted_labels ./output/$NAME-dev.json  --predicted_evidence ../data/bert_eval.json --actual ../data/dev_eval.json
 
-CUDA_VISIBLE_DEVICES=8 python test_roberta.py --outdir ./output/ \
---test_path ../data/fever_with_concepts_and_graph_roberta/test.json \
---bert_pretrain ../checkpoint/roberta-large-mlm-1 \
+CUDA_VISIBLE_DEVICES=7 python test_roberta.py --outdir ./output/ \
+--test_path ../data/fever_with_concepts_and_graph_roberta_1/test.json \
+--bert_pretrain ../checkpoint/roberta_large_mlm \
 --checkpoint ../checkpoint/$NAME/model.best.pt \
 --use_concept \
 --span_use_gat \
