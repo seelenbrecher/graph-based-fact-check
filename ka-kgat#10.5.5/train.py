@@ -87,7 +87,7 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
             loss = F.nll_loss(probs, class_label)
             if args.use_evi_select_loss:
                 loss += F.binary_cross_entropy(evi_probs, evi_labels)
-                loss += F.cross_entropy(evi_class_probs.view(-1, 3), evi_class_labels.view(-1)) / args.evi_num
+#                 loss += F.cross_entropy(evi_class_probs.view(-1, 3), evi_class_labels.view(-1)) / args.evi_num
             running_loss += loss.item()
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps

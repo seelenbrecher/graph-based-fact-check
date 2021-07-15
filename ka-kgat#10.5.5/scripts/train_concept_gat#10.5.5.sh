@@ -4,7 +4,7 @@
 # --bert_pretrain ../bert_base \
 # --postpretrain ../pretrain/save_model/model.best.pt
 
-NAME=ka-kgat-concept-gat\#10.5.5
+NAME=ka-kgat-concept-gat\#10.5.5.2
 
 rm ../checkpoint/$NAME/train_log.txt
 

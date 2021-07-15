@@ -4,11 +4,11 @@
 # --bert_pretrain ../bert_base \
 # --postpretrain ../pretrain/save_model/model.best.pt
 
-NAME=ka-kgat-concept-gat\#10.5.5.roberta
+NAME=ka-kgat-concept-gat\#10.5.5.1.roberta-dummy
 
 rm ../checkpoint/$NAME/train_log.txt
 
-# # use concept + gat
+ # use concept + gat
 CUDA_VISIBLE_DEVICES=7 python train_roberta.py --outdir ../checkpoint/$NAME \
 --train_path ../data/fever_with_concepts_and_graph_roberta_with_sents_labels/train.json \
 --valid_path ../data/fever_with_concepts_and_graph_roberta_with_sents_labels/eval.json \
