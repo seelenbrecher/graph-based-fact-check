@@ -16,6 +16,8 @@ from data_loader import DataLoader
 from bert_model import BertForSequenceEncoder
 from torch.nn import NLLLoss
 
+from sklearn.metrics import precision_recall_fscore_support
+
 from prepare_concept import add_concept_args, load_transe_emb, add_span_gat_args
 import logging
 
@@ -44,6 +46,24 @@ def correct_prediction(output, labels):
     correct = correct.sum()
     return correct
 
+def eval_model_with_f1(model, validset_reader):
+    model.eval()
+    correct_pred = 0.0
+    ground_truths = []
+    preds = []
+    for index, data in enumerate(validset_reader):
+        inputs, lab_tensor = data
+        class_label, evi_labels, evi_class_labels = lab_tensor
+        probs, evi_probs, evi_class_probs = model(inputs, roberta=True)
+        pred = probs.max(1)[1].type_as(class_label)
+        ground_truths.extend(class_label)
+        preds.extend(pred)
+
+    ground_truths = [i.item() for i in ground_truths]
+    preds = [i.item() for i in preds]
+    prec, rec, f1, _ = precision_recall_fscore_support(ground_truths, preds, average='macro')
+    logger.info('prec = {}, rec={}, f1={}'.format(prec, rec, f1))
+    return f1
 
 def eval_model(model, validset_reader):
     model.eval()
@@ -109,7 +129,10 @@ def train_model(model, ori_model, args, trainset_reader, validset_reader):
             if global_step % (args.eval_step * args.gradient_accumulation_steps) == 0:
                 logger.info('Start eval!')
                 with torch.no_grad():
-                    dev_accuracy = eval_model(model, validset_reader)
+                    if args.with_f1:
+                        dev_accuracy = eval_model_with_f1(model, validset_reader)
+                    else:
+                        dev_accuracy = eval_model(model, validset_reader)
                     logger.info('Dev total acc: {0}'.format(dev_accuracy))
                     if dev_accuracy > best_accuracy:
                         best_accuracy = dev_accuracy
@@ -162,6 +185,7 @@ if __name__ == "__main__":
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument('--roberta', action='store_true', default=False)
     parser.add_argument('--use_evi_select_loss', action='store_true', default=False)
+    parser.add_argument('--with_f1', action='store_true', default=False)
     args = parser.parse_args()
 
     if not os.path.exists(args.outdir):

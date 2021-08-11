@@ -3,15 +3,15 @@
 # --valid_path ../data/bert_dev.json \
 # --bert_pretrain ../bert_base \
 # --postpretrain ../pretrain/save_model/model.best.pt
-
-NAME=ka-kgat-concept-gat\#10.5.8.snopes2
+# with full data
+NAME=ka-kgat-concept-gat\#10.5.8.snopes3
 
 #rm ../checkpoint/$NAME/train_log.txt
 
 # use concept + gat
 #CUDA_VISIBLE_DEVICES=15 python train.py --outdir ../checkpoint/$NAME \
-#--train_path ../data/snopes_with_concepts_and_graph.bk1/train.json \
-#--valid_path ../data/snopes_with_concepts_and_graph.bk1/test.json \
+#--train_path ../data/snopes_with_concepts_and_graph.bk5/train.json \
+#--valid_path ../data/snopes_with_concepts_and_graph.bk5/test.json \
 #--bert_pretrain ../bert_base \
 #--postpretrain ../checkpoint/pretrain/model.best.pt \
 #--use_concept \
@@ -22,8 +22,8 @@ NAME=ka-kgat-concept-gat\#10.5.8.snopes2
 #--span_gat_dropout 0.0 \
 #--with_f1
 
-CUDA_VISIBLE_DEVICES=0 python test.py --outdir ./output/ \
- --test_path ../data/snopes_with_concepts_and_graph.bk1/test.json \
+CUDA_VISIBLE_DEVICES=8 python test.py --outdir ./output/ \
+ --test_path ../data/snopes_with_concepts_and_graph.bk5/test.json \
  --bert_pretrain ../bert_base \
  --checkpoint ../checkpoint/$NAME/model.best.pt \
  --use_concept \
@@ -32,4 +32,4 @@ CUDA_VISIBLE_DEVICES=0 python test.py --outdir ./output/ \
  --span_gat_add_skip_conn \
  --name $NAME-dev.json
 
-python ukp_score_test.py --predicted_labels ./output/$NAME-dev.json  --predicted_evidence ../data/bert_eval.json --actual ../data/snopes_with_concepts_and_graph_roberta.bk1/test.json
+python ukp_score_test.py --predicted_labels ./output/$NAME-dev.json  --predicted_evidence ../data/bert_eval.json --actual ../data/snopes_with_concepts_and_graph_roberta.bk5/test.json

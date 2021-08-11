@@ -240,7 +240,7 @@ class DataLoader(object):
                         evi_class_labels.append(label)
                     else:
                         evi_class_labels.append(2) #NEI
-                
+                        
                 examples.append([evi_list, (label, evi_labels, evi_class_labels)])
         return examples
 

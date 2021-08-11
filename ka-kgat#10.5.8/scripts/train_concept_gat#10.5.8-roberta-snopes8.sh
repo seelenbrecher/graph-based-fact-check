@@ -4,30 +4,32 @@
 # --bert_pretrain ../bert_base \
 # --postpretrain ../pretrain/save_model/model.best.pt
 
-NAME=ka-kgat-concept-gat\#10.5.8.roberta.snopes
+# use micro
+NAME=ka-kgat-concept-gat\#10.5.8.roberta.snopes-8
 
 rm ../checkpoint/$NAME/train_log.txt
 
  # use concept + gat
-CUDA_VISIBLE_DEVICES=5 python train_roberta.py --outdir ../checkpoint/$NAME \
---train_path ../data/snopes_with_concepts_and_graph_roberta/train.json \
---valid_path ../data/snopes_with_concepts_and_graph_roberta/test.json \
+CUDA_VISIBLE_DEVICES=1 python train_roberta.py --outdir ../checkpoint/$NAME \
+--train_path ../data/snopes_with_concepts_and_graph_roberta.bk4/train.json \
+--valid_path ../data/snopes_with_concepts_and_graph_roberta.bk4/test.json \
 --bert_pretrain ../checkpoint/roberta_large_mlm \
 --postpretrain ../checkpoint/roberta_large_mlm \
 --use_concept \
 --span_use_gat \
---num_train_epochs 15 \
+--num_train_epochs 30 \
 --span_gat_add_skip_conn \
 --span_gat_dropout 0.0 \
 --concept_dim 1024 \
 --node_dim 1024 \
 --roberta \
---eval_step 50 \
+--eval_step 25 \
 --span_gat_n_features 1024 256 256 1 \
---with_f1
+--with_f1 \
+--learning_rate 5e-6 \
 
-CUDA_VISIBLE_DEVICES=5 python test_roberta.py --outdir ./output/ \
- --test_path ../data/snopes_with_concepts_and_graph_roberta/test.json \
+CUDA_VISIBLE_DEVICES=1 python test_roberta.py --outdir ./output/ \
+ --test_path ../data/snopes_with_concepts_and_graph_roberta.bk4/test.json \
  --bert_pretrain ../checkpoint/roberta_large_mlm \
  --checkpoint ../checkpoint/$NAME/model.best.pt \
  --use_concept \
@@ -40,4 +42,4 @@ CUDA_VISIBLE_DEVICES=5 python test_roberta.py --outdir ./output/ \
  --span_gat_n_features 1024 256 256 1 \
  --name $NAME-dev.json
 
-python ukp_score_test.py --predicted_labels ./output/$NAME-dev.json  --predicted_evidence ../data/bert_eval.json --actual ../data/snopes_with_concepts_and_graph_roberta/test.json
+python ukp_score_test.py --predicted_labels ./output/$NAME-dev.json  --predicted_evidence ../data/bert_eval.json --actual ../data/snopes_with_concepts_and_graph_roberta.bk4/test.json
