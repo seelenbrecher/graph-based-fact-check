@@ -10,9 +10,9 @@ NAME=ka-kgat-concept-gat\#10.5.8.roberta.snopes-10
 #rm ../checkpoint/$NAME/train_log.txt
 
  # use concept + gat
-#CUDA_VISIBLE_DEVICES=2 python train_roberta.py --outdir ../checkpoint/$NAME \
-#--train_path ../data/snopes_with_concepts_and_graph_roberta.bk5/train.json \
-#--valid_path ../data/snopes_with_concepts_and_graph_roberta.bk5/test.json \
+#CUDA_VISIBLE_DEVICES=0 python train_roberta.py --outdir ../checkpoint/$NAME \
+#--train_path ../data/snopes_with_concepts_and_graph_roberta.bk6/train.json \
+#--valid_path ../data/snopes_with_concepts_and_graph_roberta.bk6/test.json \
 #--bert_pretrain ../checkpoint/roberta_large_mlm \
 #--postpretrain ../checkpoint/roberta_large_mlm \
 #--use_concept \
@@ -28,8 +28,8 @@ NAME=ka-kgat-concept-gat\#10.5.8.roberta.snopes-10
 #--with_f1 \
 #--learning_rate 5e-6 \
 
-CUDA_VISIBLE_DEVICES=5 python test_roberta.py --outdir ./output/ \
- --test_path ../data/snopes_with_concepts_and_graph_roberta.bk5/test.json \
+CUDA_VISIBLE_DEVICES=0 python test_roberta.py --outdir ./output/ \
+ --test_path ../data/snopes_with_concepts_and_graph_roberta.bk6/test.json \
  --bert_pretrain ../checkpoint/roberta_large_mlm \
  --checkpoint ../checkpoint/$NAME/model.best.pt \
  --use_concept \
