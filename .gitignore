@@ -130,7 +130,7 @@ dmypy.json
 
 bert_base/
 checkpoint/
-data/*.json
-data/*.csv
-data/*.txt
+data/
+!data/scripts/*.sh
+!data/scripts/*.py
 outputs/
