@@ -669,7 +669,39 @@ def bert_concept_alignment_roberta(tokens, c_concepts, e_concepts, claim_bound, 
 
     return merged_tokens, final_token_id2concept_id, input_masks, segment_ids, token_pooling_mask
 
-def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor, roberta=False):
+
+def create_edges_without_pooling(merged_tokens, tok_pool_mask, head_indices, tail_indices, rel_ids):
+    seq_len = len(tok_pool_mask[0])
+    
+    recover_ids = [-1] * seq_len
+    for idx in range(0, seq_len):
+        for j in range(0, seq_len):
+            if tok_pool_mask[j][idx] != 0:
+                if recover_ids[j] != -1:
+                    print('ADA YANG ANEH WOII')
+                recover_ids[j] = idx
+    
+    nodes = [[] for i in range(0, seq_len)]
+    
+    for idx, id in enumerate(recover_ids):
+        nodes[id].append(idx)
+        
+    new_head_indices = []
+    new_tail_indices = []
+    new_rel_ids = []
+    for head, rel, tail in zip(head_indices, rel_ids, tail_indices):
+        head_nodes = nodes[head]
+        tail_nodes = nodes[tail]
+        
+        for head_node in head_nodes:
+            for tail_node in tail_nodes:
+                new_head_indices.append(head_node)
+                new_tail_indices.append(tail_node)
+                new_rel_ids.append(rel)
+        
+    return new_head_indices, new_tail_indices, new_rel_ids
+
+def tok2int_sent(sentence, tokenizer, max_seq_length, head_indices, tail_indices, rel_ids, roberta=False):
     """Loads a data file into a list of `InputBatch`s."""
     sent_a, title, sent_b, c_concepts, e_concepts = sentence
     tokens_a = tokenizer.tokenize(sent_a)
@@ -729,10 +761,12 @@ def tok2int_sent(sentence, tokenizer, max_seq_length, graph_constructor, roberta
     assert len(tok_pool_mask) == max_seq_length
     assert len(comb_input_mask) == max_seq_length
     assert len(comb_segment_ids) == max_seq_length
-
-    # create graph based on bert concept alignment
-    head_indices, tail_indices, rel_ids = graph_constructor.construct_concept_graph(merged_tokens, tok2concept, 
-                                                                                         comb_input_mask)
+    
+    # modify the concept graph.
+    # instead of pooling multiple token into 1 word, how if, we create fully connection between all tokens in each word
+    #lets say A and B has conceptual relation, where A = [a1, a2], B = [b1, b2], relation = r
+    # we add 4 edges, a1,r,b1, a1,r,b2, a2,r,b1, a2,r,b2
+    head_indices, tail_indices, rel_ids = create_edges_without_pooling(merged_tokens, tok_pool_mask, head_indices, tail_indices, rel_ids)
     
     return head_indices, tail_indices, rel_ids
 
@@ -774,18 +808,11 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 def worker(args, batch, n_batch):
     input_data = []
     print('load data', batch)
-    with open(args.input, 'r') as f_in:
+    with open(args.concept_input, 'r') as f_in:
         for step, line in enumerate(f_in):
             data = json.loads(line)
             input_data.append(data)
     print('end load data', batch)
-
-    n_data = len(input_data)
-    item_cnt = math.ceil(n_data/n_batch)
-    s_id = batch * item_cnt
-    e_id = min((batch + 1) * item_cnt, len(input_data))
-    
-    print('process batch = {}/{}, start_id = {}, end_id = {}'.format(batch, n_batch, s_id, e_id))
     
     label_map = {'SUPPORTS': 0, 'REFUTES': 1, 'NOT ENOUGH INFO': 2}
     
@@ -794,10 +821,14 @@ def worker(args, batch, n_batch):
     else:
         tokenizer = BertTokenizer.from_pretrained(args.bert_pretrain, do_lower_case=False)
     
-    graph_constructor = GraphConstructor(args)
-    with open('{}_{}.json'.format(args.output, batch), 'w') as f_out:
-        for instance in tqdm(input_data[s_id:e_id]):
+    with open(args.output, 'w') as f_out:
+        for instance in tqdm(input_data):
             claim = instance['claim']
+            
+            head_ids = instance['evi_head_indices']
+            tail_ids = instance['evi_tail_indices']
+            relation_ids = instance['evi_rel_ids']
+            
             evi_list = list()
             for evidence in instance['evidence']:
                 item = [process_sent(claim), process_wiki_title(evidence[0]),
@@ -812,8 +843,8 @@ def worker(args, batch, n_batch):
             evi_head_indices = []
             evi_tail_indices = []
             evi_rel_ids = []
-            for evi in evi_list:
-                head_indices, tail_indices, rel_ids = tok2int_sent(evi, tokenizer, args.max_len, graph_constructor, roberta=args.roberta)
+            for evi, head_id, tail_id, rel_id in zip(evi_list, head_ids, tail_ids, relation_ids):
+                head_indices, tail_indices, rel_ids = tok2int_sent(evi, tokenizer, args.max_len, head_id, tail_id, rel_id, roberta=args.roberta)
                 evi_head_indices.append(head_indices)
                 evi_tail_indices.append(tail_indices)
                 evi_rel_ids.append(rel_ids)
@@ -829,17 +860,16 @@ def main():
     parser = add_concept_args(parser)
     parser = add_span_gat_args(parser)
     parser.add_argument('--max_len', default=130, type=int)
-    parser.add_argument('--evi_num', default=500, type=int)
+    parser.add_argument('--evi_num', default=5, type=int)
     parser.add_argument('--input')
     parser.add_argument('--output')
     parser.add_argument('--bert_pretrain', default='../../bert_base')
     parser.add_argument('--roberta', action='store_true', default=False)
+    parser.add_argument('--concept_input')
     
     args = parser.parse_args()
     
-    for batch in range(8):
-        p = multiprocessing.Process(target=worker, args=(args, batch, 8,))
-        p.start()
+    worker(args, 0, 8)
 
 if __name__=='__main__':
     main()
